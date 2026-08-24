@@ -1,40 +1,104 @@
+บั๊กวาร์ปกลับจุดเดิม (Rubberband / Snap-back) และการที่ตัวละครยังทำท่าเดินขยับขาอยู่เกิดจากการที่เซิร์ฟเวอร์คอยดึงพิกัดตัวกลับ รวมถึงระบบ Animation ของ Roblox ยังทำงานอยู่ครับ
+
+วิธีแก้ที่ดีที่สุดคือ **ใช้การล็อกตัวละครด้วย `LinearVelocity` / `BodyVelocity**` เพื่อให้เคลื่อนที่ราบรื่น ไม่กระตุกกลับ และ **ปิดการทำงานของ Animation Track (หยุดท่าเดิน)** พร้อมกับล็อกท่าทาง ให้ตัวละครแข็งนิ่งและลอยเหนือพื้นเล็กน้อยคล้ายโหมดบินครับ
+
+### จุดที่ได้รับการอัปเดตแก้ไข:
+
+1. **แก้ปัญหาตัววาร์ปกลับจุดเดิม:** เปลี่ยนจากการใช้ `TranslateBy` มาเป็นการใช้ `BodyVelocity` ในการผลักตำแหน่งไปตรงๆ ทำให้เคลื่อนที่ได้สมูท ไม่โดนเซิร์ฟเวอร์ดีดกลับ
+2. **ตัวแข็งนิ่ง (Freeze Animation):** เมื่อเปิดสวิตช์วิ่งไว ระบบจะสั่งหยุด (Pause/Stop) Animation ท่าเดินทั้งหมดทันที ทำให้ตัวแข็งค้าง
+3. **ตัวลอยคล้ายบิน:** เพิ่มแรงยกแนวตั้งเล็กน้อย และปิดแรงโน้มถ่วงชั่วคราวขณะวิ่ง เพื่อให้ตัวละครลอยค้างกลางอากาศขณะพุ่งไปข้างหน้า
+
+นำโค้ดด้านล่างนี้ไป **วางทับในส่วนที่ 5 (`5. MOVEMENT ENGINE`)** ของสคริปต์เดิมได้เลยครับ:
+
+```lua
 -- ==========================================
--- Script: THE CRAFT HUB (Steal an Egg - Ultimate OVERHAUL 2026)
--- Theme: Cyberpunk Neon Blue/Purple UI
--- Includes: Fly Farm, TP Farm, Instant Re-Equip, Anti-Drop, 
---           Event Auto-Tree, Zone Filter, Size/Rarity Filter, Smooth Speed, Fixed ESP
+-- 5. MOVEMENT ENGINE (FLY-SPEED & ANIMATION FREEZE)
 -- ==========================================
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local LocalPlayer = Players.LocalPlayer
+AddToggle(PageMove, "เปิดระบบวิ่งไวตัวแข็งลอย (Fly Speed)", function(v) 
+    Config.SpeedToggle = v 
+    
+    -- ถ้าสั่งปิด ให้คืนค่า Animation กลับมาเดินได้ตามปกติ
+    if not v then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            
+            -- ลบตัวดันความเร็วออก
+            if root and root:FindFirstChild("CraftSpeedBV") then
+                root.CraftSpeedBV:Destroy()
+            end
+            
+            -- เล่น Animation ต่อตามปกติ
+            if hum and hum:FindFirstChild("Animator") then
+                for _, track in ipairs(hum.Animator:GetPlayingAnimationTracks()) do
+                    track:AdjustSpeed(1)
+                end
+            end
+        end
+    end
+end)
 
--- Configuration System
-local Config = {
-    -- Farm Modes
-    FarmMode = "None", -- "Fly", "TP", or "None"
-    FlySpeedFarm = 60,
-    SavedBaseCFrame = nil,
+AddInput(PageMove, "ค่าความเร็วการวิ่ง (แนะนำ 40 - 100):", 60, function(t)
+    local n = tonumber(t)
+    if n then Config.WalkSpeed = n end
+end)
+
+AddToggle(PageMove, "เดินทะลุสิ่งกีดขวาง (Noclip)", function(v) Config.Noclip = v end)
+
+-- Smooth Fly-Speed & Character Freeze Loop
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
     
-    -- Anti-Drop & Security
-    AutoReEquipOnDrop = true,
-    AntiDropOnHit = true,
-    AntiResetToolLoss = true,
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
     
-    -- Event Mode
-    AutoEventTree = false,
-    
-    -- Speed & Movement (Fixed Warp-Back & Animation Freeze)
-    SpeedToggle = false,
-    WalkSpeed = 32,
-    Noclip = false,
-    
-    -- Filters (Zone / Size / Rarity)
-    SelectedZone = "All", -- "All", "Middle", "Forest", "Desert", "Volcano"
-    MinEggSize = 0,       -- 0: ทั้งหมด, 1: เล็ก, 2: กลาง, 3: ใหญ่
-    TargetRarity = "All", -- "All", "Common", "Rare", "Epic", "Legendary", "Mythic"
+    if root and hum then
+        if Config.SpeedToggle then
+            -- 1. แช่แข็ง Animation (หยุดท่าเดิน/วิ่ง ให้ตัวแข็งนิ่ง)
+            if hum:FindFirstChild("Animator") then
+                for _, track in ipairs(hum.Animator:GetPlayingAnimationTracks()) do
+                    track:AdjustSpeed(0) -- ปรับความเร็วอนิเมชั่นเป็น 0 (หยุดนิ่ง)
+                end
+            end
+
+            -- 2. สร้างระบบผลักแรงเคลื่อนที่ (ป้องกันการวาร์ปกลับจุดเดิม)
+            local bv = root:FindFirstChild("CraftSpeedBV")
+            if not bv then
+                bv = Instance.new("BodyVelocity")
+                bv.Name = "CraftSpeedBV"
+                bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                bv.Parent = root
+            end
+
+            -- 3. คำนวณทิศทางการเคลื่อนที่ + ลอยตัวกลางอากาศ
+            local moveDir = hum.MoveDirection
+            if moveDir.Magnitude > 0 then
+                -- ถ้ามีการกดปุ่มเดิน ให้พุ่งไปตามทิศทางพร้อมลอยตัวเล็กน้อย
+                bv.Velocity = (moveDir * Config.WalkSpeed) + Vector3.new(0, 1, 0)
+            else
+                -- ถ้าไม่ได้กดเดิน ให้ลอยนิ่งๆ อยู่กับที่ (ไม่ร่วงพื้น)
+                bv.Velocity = Vector3.new(0, 1, 0)
+            end
+        else
+            -- ลบ BodyVelocity ออกเมื่อปิดฟังก์ชัน
+            if root:FindFirstChild("CraftSpeedBV") then
+                root.CraftSpeedBV:Destroy()
+            end
+        end
+        
+        -- ระบบ Noclip เดินทะลุสิ่งกีดขวาง
+        if Config.Noclip then
+            for _, p in ipairs(char:GetChildren()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+    end
+end)
+
+```    TargetRarity = "All", -- "All", "Common", "Rare", "Epic", "Legendary", "Mythic"
     
     -- Visual / ESP
     EspEnabled = false,   -- ปิดไว้เป็น Default เพื่อไม่ให้มองทะลุเอง
