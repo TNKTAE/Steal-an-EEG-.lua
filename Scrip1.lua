@@ -1,7 +1,8 @@
 -- ==========================================
--- Script: THE CRAFT HUB (Steal an Egg - Fix & Ultimate Edition)
--- Theme: Cyberpunk Neon Cyan/Purple Animated UI
--- Features: Fix Teleport Walk, Zone-Only ESP, Spawn Radar, Auto Farm, Mechanics Fix
+-- Script: THE CRAFT HUB (Steal an Egg - Ultimate OVERHAUL 2026)
+-- Theme: Cyberpunk Neon Blue/Purple UI
+-- Includes: Fly Farm, TP Farm, Instant Re-Equip, Anti-Drop, 
+--           Event Auto-Tree, Zone Filter, Size/Rarity Filter, Smooth Speed
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -10,25 +11,37 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
--- Global State & Config
+-- Configuration System
 local Config = {
-    CurrentMap = "Steal an Egg",
-    AutoSteal = false,
-    AutoReturn = false,
-    AutoPickupDrop = false,
-    NoDrop = false,
-    CustomSpeedToggle = false,
+    -- Farm Modes
+    FarmMode = "None", -- "Fly", "TP", or "None"
+    FlySpeedFarm = 60,
+    SavedBaseCFrame = nil,
+    
+    -- Anti-Drop & Security
+    AutoReEquipOnDrop = true,
+    AntiDropOnHit = true,
+    AntiResetToolLoss = true,
+    
+    -- Event Mode
+    AutoEventTree = false,
+    
+    -- Speed & Movement (Fixed Warp-Back & Animation Freeze)
+    SpeedToggle = false,
     WalkSpeed = 32,
     Noclip = false,
-    Fly = false,
-    FlySpeed = 40,
-    EggESP = false,
-    PlayerESP = false,
-    SelectedRarity = "ทั้งหมด",
-    SavedBaseCFrame = nil
+    
+    -- Filters (Zone / Size / Rarity)
+    SelectedZone = "All", -- "All", "Middle", "Forest", "Desert", "Volcano"
+    MinEggSize = 0,       -- 0: ทั้งหมด, 1: เล็ก, 2: กลาง, 3: ใหญ่
+    TargetRarity = "All", -- "All", "Common", "Rare", "Epic", "Legendary", "Mythic"
+    
+    -- Visual / ESP
+    CleanESP = true,
+    ShowDistance = true
 }
 
--- Rarity Colors Setup
+-- Rarity Colors Definition
 local RarityColors = {
     Common = Color3.fromRGB(200, 200, 200),
     Rare = Color3.fromRGB(0, 150, 255),
@@ -37,17 +50,17 @@ local RarityColors = {
     Mythic = Color3.fromRGB(255, 0, 80)
 }
 
--- ScreenGui Setup
+-- ScreenGui Init
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TheCraftHub_V3"
+ScreenGui.Name = "TheCraftHub_Overhaul"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Intro & Main Frames
+-- Main UI Frame Setup
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 0, 0, 0)
-MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, 540, 0, 430)
+MainFrame.Position = UDim2.new(0.5, -270, 0.5, -215)
 MainFrame.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
@@ -64,16 +77,16 @@ MainUIStroke.Color = Color3.fromRGB(0, 220, 255)
 MainUIStroke.Thickness = 2
 MainUIStroke.Parent = MainFrame
 
--- Animated Rainbow/Cyan Border
+-- Neon Animated Border Effect
 task.spawn(function()
     while task.wait(0.04) do
         MainUIStroke.Color = Color3.fromHSV((tick() * 0.2) % 1, 0.9, 1)
     end
 end)
 
--- Top Header
+-- Top Header Bar
 local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 42)
+TopBar.Size = UDim2.new(1, 0, 0, 40)
 TopBar.BackgroundColor3 = Color3.fromRGB(6, 9, 15)
 TopBar.BorderSizePixel = 0
 TopBar.Parent = MainFrame
@@ -82,7 +95,7 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -50, 1, 0)
 TitleLabel.Position = UDim2.new(0, 12, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "⚡ THE CRAFT HUB ✦ Cyberpunk Edition"
+TitleLabel.Text = "⚡ THE CRAFT HUB ✦ Cyberpunk Overhaul Edition"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 230, 255)
 TitleLabel.TextSize = 13
 TitleLabel.Font = Enum.Font.GothamBold
@@ -91,19 +104,18 @@ TitleLabel.Parent = TopBar
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
-CloseBtn.Position = UDim2.new(1, -32, 0, 8)
+CloseBtn.Position = UDim2.new(1, -32, 0, 7)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 70)
 CloseBtn.Text = "✕"
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 12
 CloseBtn.Parent = TopBar
-
 local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 6)
 CloseCorner.Parent = CloseBtn
 
--- Floating Open/Close Icon
+-- Open/Close Floating Button
 local ToggleGuiBtn = Instance.new("TextButton")
 ToggleGuiBtn.Size = UDim2.new(0, 110, 0, 36)
 ToggleGuiBtn.Position = UDim2.new(0, 15, 0.5, -18)
@@ -115,7 +127,6 @@ ToggleGuiBtn.TextSize = 12
 ToggleGuiBtn.Active = true
 ToggleGuiBtn.Draggable = true
 ToggleGuiBtn.Parent = ScreenGui
-
 local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(0, 8)
 ToggleCorner.Parent = ToggleGuiBtn
@@ -123,8 +134,8 @@ ToggleCorner.Parent = ToggleGuiBtn
 local function OpenUI()
     MainFrame.Visible = true
     TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 530, 0, 410),
-        Position = UDim2.new(0.5, -265, 0.5, -205)
+        Size = UDim2.new(0, 540, 0, 430),
+        Position = UDim2.new(0.5, -270, 0.5, -215)
     }):Play()
 end
 
@@ -142,13 +153,10 @@ ToggleGuiBtn.MouseButton1Click:Connect(function()
 end)
 CloseBtn.MouseButton1Click:Connect(CloseUI)
 
--- Instant Start UI Animation
-OpenUI()
-
--- Tabs Navigation Panel
+-- Tab Sidebar Construction
 local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(0, 125, 1, -42)
-TabBar.Position = UDim2.new(0, 0, 0, 42)
+TabBar.Size = UDim2.new(0, 130, 1, -40)
+TabBar.Position = UDim2.new(0, 0, 0, 40)
 TabBar.BackgroundColor3 = Color3.fromRGB(8, 12, 18)
 TabBar.BorderSizePixel = 0
 TabBar.Parent = MainFrame
@@ -158,8 +166,8 @@ TabListLayout.Parent = TabBar
 TabListLayout.Padding = UDim.new(0, 4)
 
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -135, 1, -50)
-ContentArea.Position = UDim2.new(0, 130, 0, 46)
+ContentArea.Size = UDim2.new(1, -140, 1, -48)
+ContentArea.Position = UDim2.new(0, 135, 0, 44)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
 
@@ -208,19 +216,21 @@ local function CreateTab(tabName)
     return page
 end
 
-local PageFarm = CreateTab("ฟาร์ม & ขโมย")
+local PageFarmMode = CreateTab("ระบบฟาร์มหลัก")
+local PageFilters = CreateTab("ตัวกรองไข่")
+local PageSecurity = CreateTab("กันไข่หลุด/เซฟตัว")
+local PageEvent = CreateTab("กิจกรรม (Event)")
 local PageMove = CreateTab("การเคลื่อนที่")
-local PageVisual = CreateTab("ESP & เรดาร์")
-local PageUtility = CreateTab("ตั้งค่า/คำสั่ง")
+local PageVisual = CreateTab("ESP คลีน")
 
 Tabs[1].BackgroundColor3 = Color3.fromRGB(0, 160, 230)
 Tabs[1].TextColor3 = Color3.fromRGB(255, 255, 255)
 TabPages[1].Visible = true
 
--- UI Builders
+-- Shared Component Helpers
 local function AddToggle(parentPage, text, callback)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -6, 0, 36)
+    row.Size = UDim2.new(1, -6, 0, 34)
     row.BackgroundColor3 = Color3.fromRGB(16, 22, 32)
     row.Parent = parentPage
 
@@ -240,8 +250,8 @@ local function AddToggle(parentPage, text, callback)
     lbl.Parent = row
 
     local switch = Instance.new("TextButton")
-    switch.Size = UDim2.new(0, 52, 0, 22)
-    switch.Position = UDim2.new(1, -58, 0.5, -11)
+    switch.Size = UDim2.new(0, 50, 0, 22)
+    switch.Position = UDim2.new(1, -56, 0.5, -11)
     switch.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
     switch.Text = "ปิด"
     switch.TextColor3 = Color3.fromRGB(160, 160, 160)
@@ -266,7 +276,7 @@ end
 
 local function AddInput(parentPage, text, defaultVal, callback)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -6, 0, 36)
+    row.Size = UDim2.new(1, -6, 0, 34)
     row.BackgroundColor3 = Color3.fromRGB(16, 22, 32)
     row.Parent = parentPage
 
@@ -303,10 +313,9 @@ local function AddInput(parentPage, text, defaultVal, callback)
 end
 
 -- ==========================================
--- SCRIPT LOGIC FIXES & FEATURES
+-- CORE HELPER FUNCTIONS & TARGET FILTERING
 -- ==========================================
 
--- Helper: Check Egg in Hand
 local function GetHeldEgg()
     local char = LocalPlayer.Character
     if not char then return nil end
@@ -318,8 +327,41 @@ local function GetHeldEgg()
     return nil
 end
 
--- Helper: Find Steal-Zone Eggs (Exclude Base/Plots)
-local function GetTargetEggInZone()
+-- Check Zone, Rarity, and Size constraints
+local function IsEggValid(obj)
+    -- Ignore eggs inside player bases, plots, or player character models
+    if obj:FindFirstAncestor("Bases") or obj:FindFirstAncestor("Plots") or (LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character)) then
+        return false
+    end
+    
+    -- Zone Check
+    if Config.SelectedZone ~= "All" then
+        local zoneFolder = obj:FindFirstAncestorOfClass("Folder") or obj.Parent
+        if not zoneFolder or not zoneFolder.Name:lower():find(Config.SelectedZone:lower()) then
+            return false
+        end
+    end
+
+    -- Rarity Check
+    if Config.TargetRarity ~= "All" then
+        if not obj.Name:lower():find(Config.TargetRarity:lower()) then
+            return false
+        end
+    end
+
+    -- Size Check (Based on Part Size magnitude)
+    local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+    if part and Config.MinEggSize > 0 then
+        local sz = part.Size.Magnitude
+        if Config.MinEggSize == 1 and sz > 4 then return false end -- Small Only
+        if Config.MinEggSize == 2 and (sz < 4 or sz > 8) then return false end -- Medium Only
+        if Config.MinEggSize == 3 and sz < 8 then return false end -- Large Only
+    end
+
+    return true
+end
+
+local function GetTargetEgg()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
     
@@ -328,9 +370,7 @@ local function GetTargetEggInZone()
 
     for _, obj in ipairs(workspace:GetDescendants()) do
         if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:lower():find("egg") then
-            -- Check parent to ignore player bases & inventory
-            local isInsideBase = obj:FindFirstAncestor("Bases") or obj:FindFirstAncestor("Plots") or obj:IsDescendantOf(char)
-            if not isInsideBase then
+            if IsEggValid(obj) then
                 local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
                 if part then
                     local dist = (char.HumanoidRootPart.Position - part.Position).Magnitude
@@ -345,21 +385,54 @@ local function GetTargetEggInZone()
     return closestEgg
 end
 
--- 1. FARMING TAB
-AddToggle(PageFarm, "ขโมยไข่อัตโนมัติ (Auto Steal)", function(v) Config.AutoSteal = v end)
-AddToggle(PageFarm, "ขโมยเสร็จวาร์ปส่งฐาน (Auto Return)", function(v) Config.AutoReturn = v end)
-AddToggle(PageFarm, "เก็บไข่ตกพื้นทันที (Auto Pickup Drop)", function(v) Config.AutoPickupDrop = v end)
-AddToggle(PageFarm, "กันมอนสเตอร์ตีไข่หลุด (No Drop)", function(v) Config.NoDrop = v end)
+-- ==========================================
+-- 1. FARM MODE SELECTION & BASE SAVER
+-- ==========================================
 
--- Set Base Manual Button
+local ModeStatus = Instance.new("TextLabel")
+ModeStatus.Size = UDim2.new(1, -6, 0, 30)
+ModeStatus.BackgroundColor3 = Color3.fromRGB(16, 22, 32)
+ModeStatus.Text = "สถานะโหมดฟาร์ม: 🔴 ปิดการทำงาน"
+ModeStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
+ModeStatus.Font = Enum.Font.GothamBold
+ModeStatus.TextSize = 11
+ModeStatus.Parent = PageFarmMode
+local msCorner = Instance.new("UICorner")
+msCorner.CornerRadius = UDim.new(0, 6)
+msCorner.Parent = ModeStatus
+
+local function CreateModeBtn(text, modeName)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -6, 0, 34)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 35, 50)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(200, 230, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.Parent = PageFarmMode
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        Config.FarmMode = modeName
+        ModeStatus.Text = "สถานะโหมดฟาร์ม: 🟢 " .. text
+        ModeStatus.TextColor3 = Color3.fromRGB(0, 230, 150)
+    end)
+end
+
+CreateModeBtn("✈️ โหมด 1: บินไปขโมยไข่ แล้วบินกลับฐาน", "Fly")
+CreateModeBtn("⚡ โหมด 2: วาร์ปไปขโมยไข่ แล้ววาร์ปกลับฐาน", "TP")
+CreateModeBtn("🛑 ปิดระบบฟาร์มทั้งหมด", "None")
+
 local SetBaseBtn = Instance.new("TextButton")
-SetBaseBtn.Size = UDim2.new(1, -6, 0, 32)
+SetBaseBtn.Size = UDim2.new(1, -6, 0, 34)
 SetBaseBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 200)
-SetBaseBtn.Text = "📌 บันทึกพิกัดฐานผู้เล่น"
+SetBaseBtn.Text = "📌 บันทึกพิกัดฐานเก็บไข่ (Save Base Position)"
 SetBaseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 SetBaseBtn.Font = Enum.Font.GothamBold
 SetBaseBtn.TextSize = 11
-SetBaseBtn.Parent = PageFarm
+SetBaseBtn.Parent = PageFarmMode
 local sbCorner = Instance.new("UICorner")
 sbCorner.CornerRadius = UDim.new(0, 6)
 sbCorner.Parent = SetBaseBtn
@@ -367,116 +440,155 @@ sbCorner.Parent = SetBaseBtn
 SetBaseBtn.MouseButton1Click:Connect(function()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         Config.SavedBaseCFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
-        SetBaseBtn.Text = "✓ บันทึกพิกัดฐานเรียบร้อย!"
+        SetBaseBtn.Text = "✓ บันทึกตำแหน่งฐานเรียบร้อย!"
         task.wait(1.5)
-        SetBaseBtn.Text = "📌 บันทึกพิกัดฐานผู้เล่น"
+        SetBaseBtn.Text = "📌 บันทึกพิกัดฐานเก็บไข่ (Save Base Position)"
     end
 end)
 
--- 2. MOVEMENT TAB (Fix Teleporting Back)
-AddToggle(PageMove, "เปิดสวิตช์เพิ่มความเร็ว (WalkSpeed)", function(v) Config.CustomSpeedToggle = v end)
-AddInput(PageMove, "ค่าความเร็วการวิ่ง (แนะนำ: 24-40):", 32, function(t)
-    local n = tonumber(t)
-    if n then Config.WalkSpeed = n end
-end)
-AddToggle(PageMove, "เดินทะลุสิ่งกีดขวาง (Noclip)", function(v) Config.Noclip = v end)
-AddToggle(PageMove, "เปิดระบบบิน (Fly)", function(v) Config.Fly = v end)
+-- ==========================================
+-- 2. FILTERS (ZONE / SIZE / RARITY)
+-- ==========================================
 
--- Smooth Speed Loop Fix (Using MoveDirection to prevent Rubberbanding/Warp back)
-RunService.Heartbeat:Connect(function(deltaTime)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if Config.CustomSpeedToggle then
-            if hum.MoveDirection.Magnitude > 0 then
-                char:TranslateBy(hum.MoveDirection * (Config.WalkSpeed / 16) * deltaTime * 10)
+AddInput(PageFilters, "โซนที่ต้องการขโมย (All, Middle, Forest):", "All", function(t) Config.SelectedZone = t end)
+AddInput(PageFilters, "ความหายาก (All, Rare, Epic, Legendary):", "All", function(t) Config.TargetRarity = t end)
+AddInput(PageFilters, "ขนาดไข่ (0:ทั้งหมด, 1:เล็ก, 2:กลาง, 3:ใหญ่):", 0, function(t)
+    local n = tonumber(t)
+    if n then Config.MinEggSize = n end
+end)
+
+-- ==========================================
+-- 3. SECURITY & ANTI-DROP LOGIC
+-- ==========================================
+
+AddToggle(PageSecurity, "เก็บไข่อัตโนมัติรัวๆ เมื่อหลุดมือ", function(v) Config.AutoReEquipOnDrop = v end)
+AddToggle(PageSecurity, "ป้องกันไข่หลุดมือเมื่อโดนตี/โดนแย่ง", function(v) Config.AntiDropOnHit = v end)
+AddToggle(PageSecurity, "ป้องกันไข่หายเมื่อกดรีเซ็ตตัวตาย", function(v) Config.AntiResetToolLoss = v end)
+
+-- Anti Drop / Anti Reset Engine
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if Config.AntiResetToolLoss then
+        char:WaitForChild("Humanoid").Died:Connect(function()
+            local held = GetHeldEgg()
+            if held then
+                held.Parent = LocalPlayer.Backpack
+            end
+        end)
+    end
+end)
+
+-- Instant Re-Equip Loop when egg drops
+RunService.Stepped:Connect(function()
+    if Config.AutoReEquipOnDrop then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        local char = LocalPlayer.Character
+        if bp and char and char:FindFirstChild("Humanoid") then
+            for _, item in ipairs(bp:GetChildren()) do
+                if item.Name:lower():find("egg") or item:IsA("Tool") then
+                    char.Humanoid:EquipTool(item)
+                end
             end
         end
-        if Config.Noclip then
-            for _, p in ipairs(char:GetChildren()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
+    end
+
+    if Config.AntiDropOnHit and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name:lower():find("egg") then
+                part.CanCollide = false
             end
         end
-        if Config.NoDrop then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name:lower():find("egg") then
-                    part.CanCollide = false
+    end
+end)
+
+-- ==========================================
+-- 4. EVENT AUTO TREE
+-- ==========================================
+
+AddToggle(PageEvent, "วาร์ปไปตีต้นไม้อัตโนมัติ (Event Tree)", function(v) Config.AutoEventTree = v end)
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if Config.AutoEventTree and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name:lower():find("eventtree") or obj.Name:lower():find("tree") then
+                    local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+                    if part then
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = part.CFrame * CFrame.new(0, 0, 3)
+                        -- Trigger Attack Anim / Click
+                        local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                        if tool then tool:Activate() end
+                        break
+                    end
                 end
             end
         end
     end
 end)
 
--- 3. VISUAL & RADAR TAB
-AddToggle(PageVisual, "ESP มองไข่ (มองเฉพาะในโซน)", function(v) Config.EggESP = v end)
-AddToggle(PageVisual, "ESP มองผู้เล่นคนอื่น", function(v) Config.PlayerESP = v end)
+-- ==========================================
+-- 5. MOVEMENT ENGINE (FIX WARP-BACK & FREEZE)
+-- ==========================================
 
--- Spawn Radar Status Box
-local RadarBox = Instance.new("Frame")
-RadarBox.Size = UDim2.new(1, -6, 0, 75)
-RadarBox.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-RadarBox.Parent = PageVisual
-local rdbCorner = Instance.new("UICorner")
-rdbCorner.CornerRadius = UDim.new(0, 6)
-rdbCorner.Parent = RadarBox
+AddToggle(PageMove, "เปิดระบบเพิ่มความเร็วแบบสมูท (Custom Speed)", function(v) Config.SpeedToggle = v end)
+AddInput(PageMove, "ค่าความเร็วการวิ่ง (แนะนำ 24 - 45):", 32, function(t)
+    local n = tonumber(t)
+    if n then Config.WalkSpeed = n end
+end)
+AddToggle(PageMove, "เดินทะลุสิ่งกีดขวาง (Noclip)", function(v) Config.Noclip = v end)
 
-local RadarTitle = Instance.new("TextLabel")
-RadarTitle.Size = UDim2.new(1, -10, 0, 22)
-RadarTitle.Position = UDim2.new(0, 8, 0, 4)
-RadarTitle.BackgroundTransparency = 1
-RadarTitle.Text = "📡 เรดาร์สแกนไข่ในเซิร์ฟเวอร์"
-RadarTitle.TextColor3 = Color3.fromRGB(0, 220, 255)
-RadarTitle.Font = Enum.Font.GothamBold
-RadarTitle.TextSize = 11
-RadarTitle.TextXAlignment = Enum.TextXAlignment.Left
-RadarTitle.Parent = RadarBox
+-- Smooth Speed Loop: Solves Warp Back & Animation Freeze Bug
+RunService.Heartbeat:Connect(function(deltaTime)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        -- Custom Velocity Movement to Prevents Server Snap-back
+        if Config.SpeedToggle and hum.MoveDirection.Magnitude > 0 then
+            char:TranslateBy(hum.MoveDirection * (Config.WalkSpeed / 16) * deltaTime * 12)
+        end
+        
+        if Config.Noclip then
+            for _, p in ipairs(char:GetChildren()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+    end
+end)
 
-local RadarStatus = Instance.new("TextLabel")
-RadarStatus.Size = UDim2.new(1, -10, 0, 40)
-RadarStatus.Position = UDim2.new(0, 8, 0, 26)
-RadarStatus.BackgroundTransparency = 1
-RadarStatus.Text = "กำลังสแกนหาไข่ในพื้นที่..."
-RadarStatus.TextColor3 = Color3.fromRGB(200, 230, 255)
-RadarStatus.Font = Enum.Font.Gotham
-RadarStatus.TextSize = 10
-RadarStatus.TextWrapped = true
-RadarStatus.TextXAlignment = Enum.TextXAlignment.Left
-RadarStatus.Parent = RadarBox
+-- ==========================================
+-- 6. CLEAN ESP ENGINE (ZONE FILTERED)
+-- ==========================================
 
--- Radar & ESP Loop
+AddToggle(PageVisual, "เปิด ESP ไข่แบบคลีน (กรองเฉพาะโซน)", function(v) Config.CleanESP = v end)
+AddToggle(PageVisual, "แสดงระยะห่าง (Distance)", function(v) Config.ShowDistance = v end)
+
 task.spawn(function()
-    while task.wait(0.6) do
-        -- Clear old ESP
+    while task.wait(0.7) do
         for _, old in ipairs(workspace:GetDescendants()) do
-            if old.Name == "TCH_ESP" then old:Destroy() end
+            if old.Name == "TCH_CleanESP" then old:Destroy() end
         end
 
-        local count = 0
-        local latestEgg = "ไม่มี"
-
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:lower():find("egg") then
-                local inBase = obj:FindFirstAncestor("Bases") or obj:FindFirstAncestor("Plots") or (LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character))
-                if not inBase then
-                    count = count + 1
-                    latestEgg = obj.Name
-
-                    if Config.EggESP then
+        if Config.CleanESP and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:lower():find("egg") then
+                    if IsEggValid(obj) then
                         local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
                         if part then
+                            local dist = math.floor((myPos - part.Position).Magnitude)
                             local bg = Instance.new("BillboardGui")
-                            bg.Name = "TCH_ESP"
+                            bg.Name = "TCH_CleanESP"
                             bg.AlwaysOnTop = true
-                            bg.Size = UDim2.new(0, 100, 0, 25)
+                            bg.Size = UDim2.new(0, 110, 0, 22)
                             bg.Adornee = part
 
                             local txt = Instance.new("TextLabel")
                             txt.Size = UDim2.new(1,0,1,0)
                             txt.BackgroundTransparency = 1
-                            txt.Text = "🥚 " .. obj.Name
+                            txt.Text = "🥚 " .. obj.Name .. (Config.ShowDistance and (" [" .. dist .. "m]") or "")
                             txt.TextColor3 = RarityColors[obj.Name] or Color3.fromRGB(0, 230, 255)
                             txt.Font = Enum.Font.GothamBold
-                            txt.TextSize = 11
+                            txt.TextSize = 10
                             txt.Parent = bg
                             bg.Parent = part
                         end
@@ -484,41 +596,50 @@ task.spawn(function()
                 end
             end
         end
-        RadarStatus.Text = "ไข่ในโซนกลาง: " .. count .. " ใบ\nไข่พบล่าสุด: " .. latestEgg .. "\nเวลาสแกน: " .. os.date("%X")
     end
 end)
 
--- 4. UTILITY TAB
-local RejoinBtn = Instance.new("TextButton")
-RejoinBtn.Size = UDim2.new(1, -6, 0, 34)
-RejoinBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 55)
-RejoinBtn.Text = "🔄 Rejoin Server (เข้าเซิร์ฟเดิมใหม่)"
-RejoinBtn.TextColor3 = Color3.fromRGB(200, 235, 255)
-RejoinBtn.Font = Enum.Font.GothamBold
-RejoinBtn.TextSize = 11
-RejoinBtn.Parent = PageUtility
-local rjCorner = Instance.new("UICorner")
-rjCorner.CornerRadius = UDim.new(0, 6)
-rjCorner.Parent = RejoinBtn
+-- ==========================================
+-- 7. MAIN FARM ENGINE (FLY & TP MODE)
+-- ==========================================
 
-RejoinBtn.MouseButton1Click:Connect(function()
-    game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
-end)
-
--- Auto Steal & Auto Return Loop
 task.spawn(function()
-    while task.wait(0.3) do
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            if Config.AutoReturn and GetHeldEgg() then
+    while task.wait(0.2) do
+        if Config.FarmMode ~= "None" and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            local heldEgg = GetHeldEgg()
+
+            -- State A: Holding Egg -> Return to Base
+            if heldEgg then
                 if Config.SavedBaseCFrame then
-                    char.HumanoidRootPart.CFrame = Config.SavedBaseCFrame
-                    task.wait(1)
+                    if Config.FarmMode == "TP" then
+                        hrp.CFrame = Config.SavedBaseCFrame
+                        task.wait(1.2)
+                    elseif Config.FarmMode == "Fly" then
+                        local targetPos = Config.SavedBaseCFrame.Position
+                        while (hrp.Position - targetPos).Magnitude > 4 and GetHeldEgg() do
+                            local dir = (targetPos - hrp.Position).Unit
+                            hrp.CFrame = CFrame.new(hrp.Position + dir * (Config.FlySpeedFarm * 0.2), targetPos)
+                            task.wait(0.03)
+                        end
+                        task.wait(0.8)
+                    end
                 end
-            elseif Config.AutoSteal and not GetHeldEgg() then
-                local target = GetTargetEggInZone()
-                if target then
-                    char.HumanoidRootPart.CFrame = target.Part.CFrame * CFrame.new(0, 3, 0)
+            -- State B: No Egg -> Fly/TP to Egg Target
+            else
+                local target = GetTargetEgg()
+                if target and target.Part then
+                    if Config.FarmMode == "TP" then
+                        hrp.CFrame = target.Part.CFrame * CFrame.new(0, 3, 0)
+                        task.wait(0.5)
+                    elseif Config.FarmMode == "Fly" then
+                        local targetPos = target.Part.Position + Vector3.new(0, 3, 0)
+                        while (hrp.Position - targetPos).Magnitude > 4 and not GetHeldEgg() and Config.FarmMode == "Fly" do
+                            local dir = (targetPos - hrp.Position).Unit
+                            hrp.CFrame = CFrame.new(hrp.Position + dir * (Config.FlySpeedFarm * 0.2), targetPos)
+                            task.wait(0.03)
+                        end
+                    end
                 end
             end
         end
