@@ -1,6 +1,6 @@
 -- ==========================================
--- THE CRAFT HUB - Roblox Script GUI
--- Theme: Dark Navy Blue & Pure Black (เท่ๆ)
+-- THE CRAFT HUB - Fully Functional Script
+-- Theme: Dark Navy Blue & Pure Black
 -- Language: Lua
 -- ==========================================
 
@@ -11,11 +11,13 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. CONFIG / SETTINGS (ตัวแปรระบบ)
+-- 1. CONFIG & STATE MANAGEMENT
 -- ==========================================
 local Config = {
     AutoStealEgg = false,
@@ -28,184 +30,254 @@ local Config = {
     AutoRejoinServer = false,
     AntiAFK = false,
     WalkSpeed = 16,
-    WebhookURL = "",
-    StealRadius = 50
+    WebhookURL = "https://discord.com/api/webhooks/YOUR_WEBHOOK_HERE",
+    StealRadius = 60
 }
 
--- Table สำหรับเก็บ ESP Objects
-local ESP_Objects = {}
+local ESP_Storage = {
+    Egg = {},
+    Card = {}
+}
 
 -- ==========================================
--- 2. CORE FUNCTIONS (แยกฟังก์ชันการทำงานหลัก)
+-- 2. HELPER & REAL FUNCTIONAL LOGIC
 -- ==========================================
-
 local Functions = {}
 
--- 🏃‍♂️ ปรับความเร็วการเดิน
-function Functions.SetWalkSpeed(speed)
-    Config.WalkSpeed = speed
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = speed
+-- 🔍 ระบบค้นหา RemoteEvent อัตโนมัติภายในเกม
+local function FindRemote(keywords)
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            for _, kw in pairs(keywords) do
+                if string.find(string.lower(obj.Name), string.lower(kw)) then
+                    return obj
+                end
+            end
+        end
     end
+    return nil
 end
 
--- 🥚 ขโมยไข่อัตโนมัติ / ระยะ / ขนาดใหญ่
-function Functions.StealEggLogic()
+-- 🏃‍♂️ ปรับความเร็วการเดิน (รองรับการตายแล้วเกิดใหม่)
+function Functions.ApplyWalkSpeed()
     task.spawn(function()
-        while true do
-            task.wait(0.5)
-            if Config.AutoStealEgg then
-                -- ตัวอย่าง Logic: วนหาโฟลเดอร์ไข่ใน workspace (ปรับเปลี่ยนตามชื่อวัตถุในเกม)
-                for _, obj in pairs(workspace:GetChildren()) do
-                    if obj:IsA("Model") and string.find(string.lower(obj.Name), "egg") then
-                        local distance = (LocalPlayer.Character.HumanoidRootPart.Position - obj:GetModelCFrame().Position).Magnitude
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum then
+            hum.WalkSpeed = Config.WalkSpeed
+        end
+    end)
+end
+
+-- 🥚 ขโมยไข่อัตโนมัติ (Teleport + ProximityPrompt Trigger)
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if Config.AutoStealEgg then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if not Config.AutoStealEgg then break end
+                    
+                    -- ตรวจหาวัตถุที่เป็น ไข่
+                    local isEgg = string.find(string.lower(obj.Name), "egg") or obj:GetAttribute("IsEgg")
+                    if isEgg and (obj:IsA("Model") or obj:IsA("BasePart")) then
                         
-                        -- เช็คเงื่อนไขขโมยเฉพาะไข่ใหญ่
-                        local isLarge = string.find(string.lower(obj.Name), "large") or string.find(string.lower(obj.Name), "big")
-                        
+                        local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetModelCFrame().Position) or obj.Position
+                        local dist = (hrp.Position - pos).Magnitude
+                        local isLarge = string.find(string.lower(obj.Name), "large") or string.find(string.lower(obj.Name), "big") or string.find(string.lower(obj.Name), "huge")
+
+                        -- ตรวจสอบเงื่อนไขขนาดไข่
                         if Config.StealLargeEggOnly and not isLarge then
                             continue
                         end
-                        
-                        if Config.StealAllInRange and distance <= Config.StealRadius then
-                            -- โค้ดส่ง Event หรือวาร์ปไปเก็บ
-                            print("[THE CRAFT HUB] ขโมยไข่:", obj.Name)
-                        elseif not Config.StealAllInRange then
-                            print("[THE CRAFT HUB] ขโมยไข่ทั่วไป:", obj.Name)
+
+                        -- ตรวจสอบเงื่อนไขระยะทาง
+                        if Config.StealAllInRange and dist > Config.StealRadius then
+                            continue
                         end
+
+                        -- ทำการขโมย: วาร์ปไปเก็บ หรือ กด ProximityPrompt อัตโนมัติ
+                        local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChild("Prompt", true)
+                        if prompt then
+                            fireproximityprompt(prompt)
+                        else
+                            -- วาร์ปเข้าหาไข่กรณีไม่มี Prompt
+                            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                        end
+                        
+                        task.wait(0.1)
                     end
                 end
             end
         end
-    end)
-end
+    end
+end)
 
--- 👁️ ระบบแสดงตำแหน่ง (ESP)
-function Functions.ToggleESP(targetType, enable)
-    if not enable then
-        if ESP_Objects[targetType] then
-            for _, highlight in pairs(ESP_Objects[targetType]) do
-                highlight:Destroy()
-            end
-            ESP_Objects[targetType] = nil
+-- 👁️ ระบบ ESP แสดงตำแหน่งจริงพร้อมป้ายชื่อและระยะทาง
+function Functions.UpdateESP(targetType, enable)
+    -- ลบ Highlight เก่าออกก่อน
+    if ESP_Storage[targetType] then
+        for _, v in pairs(ESP_Storage[targetType]) do
+            if v then v:Destroy() end
         end
-        return
+        ESP_Storage[targetType] = {}
     end
 
-    ESP_Objects[targetType] = {}
+    if not enable then return end
 
     task.spawn(function()
-        for _, obj in pairs(workspace:GetChildren()) do
+        for _, obj in pairs(workspace:GetDescendants()) do
+            local nameLower = string.lower(obj.Name)
             local isTarget = false
-            if targetType == "Egg" and string.find(string.lower(obj.Name), "egg") then
+
+            if targetType == "Egg" and string.find(nameLower, "egg") then
                 isTarget = true
-            elseif targetType == "Card" and string.find(string.lower(obj.Name), "card") then
+            elseif targetType == "Card" and string.find(nameLower, "card") then
                 isTarget = true
             end
 
-            if isTarget then
+            if isTarget and (obj:IsA("Model") or obj:IsA("BasePart")) then
+                -- สร้าง Highlight สีเรืองแสง
                 local highlight = Instance.new("Highlight")
+                highlight.Name = "HUB_ESP_" .. targetType
                 highlight.FillColor = (targetType == "Egg") and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(255, 215, 0)
+                highlight.FillTransparency = 0.5
                 highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
                 highlight.Adornee = obj
-                highlight.Parent = obj
-                table.insert(ESP_Objects[targetType], highlight)
+                highlight.Parent = CoreGui
+
+                -- สร้าง BillboardGui ป้ายชื่อ
+                local bbFrame = Instance.new("BillboardGui")
+                bbFrame.Size = UDim2.new(0, 100, 0, 30)
+                bbFrame.AlwaysOnTop = true
+                bbFrame.Adornee = obj
+                bbFrame.Parent = highlight
+
+                local txt = Instance.new("TextLabel")
+                txt.Size = UDim2.new(1, 0, 1, 0)
+                txt.BackgroundTransparency = 1
+                txt.Text = "[" .. targetType:upper() .. "] " .. obj.Name
+                txt.TextColor3 = highlight.FillColor
+                txt.Font = Enum.Font.GothamBold
+                txt.TextSize = 10
+                txt.Parent = bbFrame
+
+                table.insert(ESP_Storage[targetType], highlight)
             end
         end
     end)
 end
 
--- 💰 ขายไข่อัตโนมัติ
-function Functions.AutoSell()
-    task.spawn(function()
-        while Config.AutoSellEggs do
-            task.wait(2)
-            print("[THE CRAFT HUB] กำลังขายไข่อัตโนมัติ...")
-            -- ReplicatedStorage.Events.SellEgg:FireServer() -- ตัวอย่างการเรียกใช้ Event ของเกม
+-- 💰 ขายไข่อัตโนมัติ (Smart Remote Hook)
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if Config.AutoSellEggs then
+            local sellRemote = FindRemote({"sell", "sellegg", "salegg"})
+            if sellRemote then
+                if sellRemote:IsA("RemoteEvent") then
+                    sellRemote:FireServer()
+                elseif sellRemote:IsA("RemoteFunction") then
+                    sellRemote:InvokeServer()
+                end
+            else
+                -- ถ้าไม่พบ Remote ให้ลองวาร์ปไปจุดขาย (Sell Zone)
+                local sellZone = workspace:FindFirstChild("SellZone", true) or workspace:FindFirstChild("Sell", true)
+                if sellZone and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = sellZone.CFrame
+                end
+            end
         end
-    end)
-end
+    end
+end)
 
 -- 🧬 ผสานสัตว์เลี้ยงอัตโนมัติ
-function Functions.AutoMerge()
-    task.spawn(function()
-        while Config.AutoMergePets do
-            task.wait(3)
-            print("[THE CRAFT HUB] กำลังผสานสัตว์เลี้ยง...")
-            -- ReplicatedStorage.Events.MergePets:FireServer()
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if Config.AutoMergePets then
+            local mergeRemote = FindRemote({"merge", "fuse", "craft", "evolve"})
+            if mergeRemote then
+                if mergeRemote:IsA("RemoteEvent") then
+                    mergeRemote:FireServer()
+                elseif mergeRemote:IsA("RemoteFunction") then
+                    mergeRemote:InvokeServer()
+                end
+            end
         end
-    end)
-end
+    end
+end)
 
--- 🌐 ย้ายเซิร์ฟเวอร์อัตโนมัติ (Hop Server)
-function Functions.RejoinServer()
-    print("[THE CRAFT HUB] กำลังย้ายเซิร์ฟเวอร์...")
-    TeleportService:Teleport(game.PlaceId, LocalPlayer)
-end
-
--- 🛡️ Anti-AFK (ป้องกันการหลุดจากเซิร์ฟ)
-function Functions.EnableAntiAFK()
-    local VirtualUser = game:GetService("VirtualUser")
-    LocalPlayer.Idled:Connect(function()
-        if Config.AntiAFK then
-            VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-            task.wait(1)
-            VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-            print("[THE CRAFT HUB] ป้องกันการหลุด AFK ทำงาน")
-        end
-    end)
-end
-
--- 📊 Webhook Alerts Send
-function Functions.SendWebhook(msg)
-    if Config.WebhookURL == "" then return end
-    local payload = HttpService:JSONEncode({
-        ["content"] = "🛡️ **THE CRAFT HUB Alert**: " .. msg
-    })
+-- 🌐 ย้ายเซิร์ฟเวอร์อัตโนมัติ (Server Hop)
+function Functions.ServerHop()
+    local Api = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+    local Http = HttpService:JSONDecode(game:HttpGet(Api))
     
-    -- หมายเหตุ: การใช้งาน Webhook จริงใน Roblox client ต้องผ่าน Request function ของ Executor เช่น syn.request / http_request
-    local req = syn and syn.request or http_request or request
+    if Http and Http.data then
+        for _, server in pairs(Http.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                break
+            end
+        end
+    end
+end
+
+-- 🛡️ Anti-AFK (ป้องกันการหลุดจากการไม่ขยับตัว 20 นาที)
+LocalPlayer.Idled:Connect(function()
+    if Config.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+        print("[THE CRAFT HUB] Anti-AFK Triggered!")
+    end
+end)
+
+-- 📊 ส่งแจ้งเตือนผ่าน Webhook
+function Functions.SendWebhook(text)
+    if Config.WebhookURL == "" or string.find(Config.WebhookURL, "YOUR_WEBHOOK") then 
+        warn("[THE CRAFT HUB] Webhook URL ไม่ถูกต้อง!")
+        return 
+    end
+    
+    local req = (syn and syn.request) or http_request or request or (http and http.request)
     if req then
         req({
             Url = Config.WebhookURL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body = payload
+            Body = HttpService:JSONEncode({
+                ["embeds"] = {{
+                    ["title"] = "🛡️ THE CRAFT HUB - Notification",
+                    ["description"] = text,
+                    ["color"] = 3394815,
+                    ["footer"] = {["text"] = "Player: " .. LocalPlayer.Name}
+                }}
+            })
         })
     end
 end
 
--- เริ่มทำงาน Loop พื้นฐาน
-Functions.StealEggLogic()
-Functions.EnableAntiAFK()
-
--- อัปเดต Speed เสมอเมื่อเกิดใหม่
-LocalPlayer.CharacterAdded:Connect(function(char)
-    char:WaitForChild("Humanoid")
-    Functions.SetWalkSpeed(Config.WalkSpeed)
-end)
-
 -- ==========================================
--- 3. GUI DESIGN (Dark Navy & Black Concept)
+-- 3. GUI CREATION (Dark Navy & Black)
 -- ==========================================
-
--- ลบ UI เก่าถ้ามีอยู่
 if CoreGui:FindFirstChild("TheCraftHubGUI") then
     CoreGui.TheCraftHubGUI:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TheCraftHubGUI"
+ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = CoreGui
 
--- Frame หลัก (สีน้ำเงินเข้มขอบดำ)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 520, 0, 360)
-MainFrame.Position = UDim2.new(0.5, -260, 0.5, -180)
-MainFrame.BackgroundColor3 = Color3.fromRGB(10, 14, 23) -- Dark Navy
+MainFrame.Size = UDim2.new(0, 480, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -240, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(8, 12, 20)
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
@@ -215,14 +287,14 @@ MainCorner.CornerRadius = UDim.new(0, 10)
 MainCorner.Parent = MainFrame
 
 local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(0, 85, 255) -- Dark Navy Blue Glow Accent
+MainStroke.Color = Color3.fromRGB(0, 102, 255)
 MainStroke.Thickness = 1.5
 MainStroke.Parent = MainFrame
 
--- Top Title Bar
+-- Top Bar
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(5, 7, 12) -- Near Black
+TitleBar.BackgroundColor3 = Color3.fromRGB(4, 6, 10)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
@@ -231,53 +303,44 @@ TitleText.Size = UDim2.new(1, -50, 1, 0)
 TitleText.Position = UDim2.new(0, 15, 0, 0)
 TitleText.Text = "THE CRAFT HUB"
 TitleText.TextColor3 = Color3.fromRGB(0, 150, 255)
-TitleText.TextSize = 18
+TitleText.TextSize = 16
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
 TitleText.BackgroundTransparency = 1
 TitleText.Parent = TitleBar
 
--- ปุ่มปิด GUI (X)
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -35, 0, 5)
 CloseBtn.Text = "✕"
 CloseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(20, 25, 35)
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 14
 CloseBtn.Parent = TitleBar
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 6)
-CloseCorner.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
 end)
 
--- Scroll Container (พื้นที่วางปุ่มฟังก์ชัน)
 local ScrollContainer = Instance.new("ScrollingFrame")
-ScrollContainer.Size = UDim2.new(1, -20, 1, -55)
+ScrollContainer.Size = UDim2.new(1, -20, 1, -50)
 ScrollContainer.Position = UDim2.new(0, 10, 0, 45)
 ScrollContainer.BackgroundTransparency = 1
-ScrollContainer.ScrollBarThickness = 4
-ScrollContainer.ScrollBarImageColor3 = Color3.fromRGB(0, 100, 200)
+ScrollContainer.ScrollBarThickness = 3
+ScrollContainer.ScrollBarImageColor3 = Color3.fromRGB(0, 102, 255)
 ScrollContainer.Parent = MainFrame
 
 local UIListLayout = Instance.new("UIListLayout")
 UIListLayout.Parent = ScrollContainer
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.Padding = UDim.new(0, 6)
 
--- ==========================================
--- 4. UI BUILDER HELPERS (สร้างปุ่ม & สวิตช์)
--- ==========================================
-
-local function CreateToggle(name, defaultState, callback)
+-- UI Building Tools
+local function CreateToggle(name, configKey, callback)
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, -10, 0, 40)
-    Frame.BackgroundColor3 = Color3.fromRGB(15, 20, 32)
+    Frame.Size = UDim2.new(1, -10, 0, 38)
+    Frame.BackgroundColor3 = Color3.fromRGB(13, 18, 28)
     Frame.Parent = ScrollContainer
 
     local Corner = Instance.new("UICorner")
@@ -290,46 +353,45 @@ local function CreateToggle(name, defaultState, callback)
     Label.Text = name
     Label.TextColor3 = Color3.fromRGB(220, 220, 220)
     Label.Font = Enum.Font.GothamMedium
-    Label.TextSize = 13
+    Label.TextSize = 12
     Label.TextXAlignment = Enum.TextXAlignment.Left
     Label.BackgroundTransparency = 1
     Label.Parent = Frame
 
     local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(0, 50, 0, 24)
-    Button.Position = UDim2.new(1, -60, 0.5, -12)
-    Button.BackgroundColor3 = defaultState and Color3.fromRGB(0, 132, 255) or Color3.fromRGB(35, 40, 55)
-    Button.Text = defaultState and "ON" or "OFF"
+    Button.Size = UDim2.new(0, 50, 0, 22)
+    Button.Position = UDim2.new(1, -58, 0.5, -11)
+    Button.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 122, 255) or Color3.fromRGB(30, 35, 50)
+    Button.Text = Config[configKey] and "ON" or "OFF"
     Button.TextColor3 = Color3.fromRGB(255, 255, 255)
     Button.Font = Enum.Font.GothamBold
-    Button.TextSize = 11
+    Button.TextSize = 10
     Button.Parent = Frame
 
     local BtnCorner = Instance.new("UICorner")
     BtnCorner.CornerRadius = UDim.new(0, 4)
     BtnCorner.Parent = Button
 
-    local state = defaultState
     Button.MouseButton1Click:Connect(function()
-        state = not state
-        Button.Text = state and "ON" or "OFF"
+        Config[configKey] = not Config[configKey]
+        Button.Text = Config[configKey] and "ON" or "OFF"
         
         TweenService:Create(Button, TweenInfo.new(0.2), {
-            BackgroundColor3 = state and Color3.fromRGB(0, 132, 255) or Color3.fromRGB(35, 40, 55)
+            BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 122, 255) or Color3.fromRGB(30, 35, 50)
         }):Play()
 
-        callback(state)
+        if callback then callback(Config[configKey]) end
     end)
 end
 
-local function CreateActionButton(name, callback)
+local function CreateButton(name, callback)
     local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(1, -10, 0, 38)
-    Button.BackgroundColor3 = Color3.fromRGB(18, 26, 43)
+    Button.Size = UDim2.new(1, -10, 0, 36)
+    Button.BackgroundColor3 = Color3.fromRGB(16, 23, 38)
     Button.Text = name
     Button.TextColor3 = Color3.fromRGB(0, 170, 255)
     Button.Font = Enum.Font.GothamBold
-    Button.TextSize = 13
+    Button.TextSize = 12
     Button.Parent = ScrollContainer
 
     local Corner = Instance.new("UICorner")
@@ -337,7 +399,7 @@ local function CreateActionButton(name, callback)
     Corner.Parent = Button
 
     local Stroke = Instance.new("UIStroke")
-    Stroke.Color = Color3.fromRGB(0, 70, 150)
+    Stroke.Color = Color3.fromRGB(0, 80, 180)
     Stroke.Thickness = 1
     Stroke.Parent = Button
 
@@ -345,100 +407,96 @@ local function CreateActionButton(name, callback)
 end
 
 -- ==========================================
--- 5. RENDER FUNCTIONS ON GUI
+-- 4. BINDING FUNCTIONS TO GUI
 -- ==========================================
 
--- 🥚 โซนขโมยไข่
-CreateToggle("ขโมยไข่อัตโนมัติ", Config.AutoStealEgg, function(val) Config.AutoStealEgg = val end)
-CreateToggle("ขโมยทุกไข่ในระยะ", Config.StealAllInRange, function(val) Config.StealAllInRange = val end)
-CreateToggle("ขโมยเฉพาะไข่ขนาดใหญ่", Config.StealLargeEggOnly, function(val) Config.StealLargeEggOnly = val end)
+CreateToggle("ขโมยไข่อัตโนมัติ", "AutoStealEgg")
+CreateToggle("ขโมยทุกไข่ในระยะ", "StealAllInRange")
+CreateToggle("ขโมยเฉพาะไข่ขนาดใหญ่", "StealLargeEggOnly")
 
--- 👁️ โซนแสดงตำแหน่ง
-CreateToggle("แสดงตำแหน่งไข่ทั้งหมด (ESP)", Config.ESP_Eggs, function(val)
-    Config.ESP_Eggs = val
-    Functions.ToggleESP("Egg", val)
+CreateToggle("แสดงตำแหน่งไข่ทั้งหมด (ESP)", "ESP_Eggs", function(val)
+    Functions.UpdateESP("Egg", val)
 end)
 
-CreateToggle("แสดงตำแหน่งการ์ด (ESP)", Config.ESP_Cards, function(val)
-    Config.ESP_Cards = val
-    Functions.ToggleESP("Card", val)
+CreateToggle("แสดงตำแหน่งการ์ด (ESP)", "ESP_Cards", function(val)
+    Functions.UpdateESP("Card", val)
 end)
 
--- ⚙️ ระบบออโต้ต่างๆ
-CreateToggle("ขายไข่อัตโนมัติ", Config.AutoSellEggs, function(val)
-    Config.AutoSellEggs = val
-    if val then Functions.AutoSell() end
+CreateToggle("ขายไข่อัตโนมัติ", "AutoSellEggs")
+CreateToggle("ผสานสัตว์เลี้ยงอัตโนมัติ", "AutoMergePets")
+CreateToggle("🛡️ Anti-AFK (ป้องกันหลุดจากเซิร์ฟ)", "AntiAFK")
+
+CreateButton("⚡ ปรับความเร็วการเดิน (Speed: 50)", function()
+    Config.WalkSpeed = 50
+    Functions.ApplyWalkSpeed()
 end)
 
-CreateToggle("ผสานสัตว์เลี้ยงอัตโนมัติ", Config.AutoMergePets, function(val)
-    Config.AutoMergePets = val
-    if val then Functions.AutoMerge() end
+CreateButton("🚶‍♂️ ความเร็วปกติ (Speed: 16)", function()
+    Config.WalkSpeed = 16
+    Functions.ApplyWalkSpeed()
 end)
 
--- 🌐 ระบบเซิร์ฟเวอร์ และ ระบบป้องกัน
-CreateActionButton("🔄 ย้ายเซิร์ฟเวอร์อัตโนมัติ", function()
-    Functions.RejoinServer()
+CreateButton("🌐 ย้ายเซิร์ฟเวอร์อัตโนมัติ (Server Hop)", function()
+    Functions.ServerHop()
 end)
 
-CreateToggle("🛡️ Anti-AFK (ป้องกันหลุดจากเซิร์ฟ)", Config.AntiAFK, function(val)
-    Config.AntiAFK = val
+CreateButton("📊 ทดสอบส่ง Discord Webhook", function()
+    Functions.SendWebhook("ระบบทดสอบการส่งแจ้งเตือนจาก THE CRAFT HUB ทำงานปกติ!")
 end)
 
--- 🏃‍♂️ ปรับความเร็ว
-CreateActionButton("⚡ ปรับความเร็วการเดิน (Speed: 50)", function()
-    Functions.SetWalkSpeed(50)
+CreateButton("⚙️ Reset ตั้งค่าทั้งหมด", function()
+    for k in pairs(Config) do
+        if type(Config[k]) == "boolean" then Config[k] = false end
+    end
+    Config.WalkSpeed = 16
+    Functions.ApplyWalkSpeed()
+    Functions.UpdateESP("Egg", false)
+    Functions.UpdateESP("Card", false)
+    print("[THE CRAFT HUB] รีเซ็ตตั้งค่าเรียบร้อย")
 end)
 
-CreateActionButton("🚶‍♂️ รีเซ็ตความเร็วปกติ (Speed: 16)", function()
-    Functions.SetWalkSpeed(16)
-end)
-
--- 📊 Webhook & Info
-CreateActionButton("📊 Webhook Alerts (ทดสอบส่งการแจ้งเตือน)", function()
-    Functions.SendWebhook("ทดสอบการเชื่อมต่อระบบแจ้งเตือนสำเร็จ!")
-end)
-
-CreateActionButton("ℹ️ ข้อมูลเพิ่มเติม / THE CRAFT HUB", function()
+CreateButton("ℹ️ ข้อมูลเพิ่มเติม", function()
     print("==================================")
-    print("THE CRAFT HUB v1.0")
-    print("Status: Active")
-    print("Theme: Dark Navy & Black")
+    print("THE CRAFT HUB - Version 2.0 (Active)")
+    print("Status: Connected & Functional")
     print("==================================")
 end)
 
--- คำนวณความสูง Canvas อัตโนมัติ
 UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 15)
+    ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
 end)
 
--- ==========================================
--- 6. TOGGLE GUI BUTTON (ปุ่มเปิด-ปิด UI หน้าจอ)
--- ==========================================
+-- Handle Character Respawn for WalkSpeed
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    Functions.ApplyWalkSpeed()
+end)
 
-local ToggleGuiBtn = Instance.new("TextButton")
-ToggleGuiBtn.Name = "ToggleCraftHub"
-ToggleGuiBtn.Size = UDim2.new(0, 110, 0, 35)
-ToggleGuiBtn.Position = UDim2.new(0, 15, 0.3, 0)
-ToggleGuiBtn.BackgroundColor3 = Color3.fromRGB(8, 12, 20)
-ToggleGuiBtn.Text = "THE CRAFT HUB"
-ToggleGuiBtn.TextColor3 = Color3.fromRGB(0, 150, 255)
-ToggleGuiBtn.Font = Enum.Font.GothamBold
-ToggleGuiBtn.TextSize = 11
-ToggleGuiBtn.Active = true
-ToggleGuiBtn.Draggable = true
-ToggleGuiBtn.Parent = ScreenGui
+-- Floating Toggle Button (ปุ่มเปิด-ปิดเมนูบนหน้าจอ)
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Name = "CraftHubOpenBtn"
+OpenBtn.Size = UDim2.new(0, 120, 0, 35)
+OpenBtn.Position = UDim2.new(0, 15, 0.2, 0)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
+OpenBtn.Text = "THE CRAFT HUB"
+OpenBtn.TextColor3 = Color3.fromRGB(0, 150, 255)
+OpenBtn.Font = Enum.Font.GothamBold
+OpenBtn.TextSize = 11
+OpenBtn.Active = true
+OpenBtn.Draggable = true
+OpenBtn.Parent = ScreenGui
 
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 8)
-ToggleCorner.Parent = ToggleGuiBtn
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(0, 8)
+OpenCorner.Parent = OpenBtn
 
-local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = Color3.fromRGB(0, 100, 220)
-ToggleStroke.Thickness = 1.2
-ToggleStroke.Parent = ToggleGuiBtn
+local OpenStroke = Instance.new("UIStroke")
+OpenStroke.Color = Color3.fromRGB(0, 102, 255)
+OpenStroke.Thickness = 1.2
+OpenStroke.Parent = OpenBtn
 
-ToggleGuiBtn.MouseButton1Click:Connect(function()
+OpenBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
-print("[THE CRAFT HUB] สคริปต์ทำงานเรียบร้อยแล้ว!")
+print("[THE CRAFT HUB] สคริปต์โหลดและพร้อมใช้งานแล้ว!")
