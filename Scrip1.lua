@@ -1,428 +1,565 @@
--- ==============================================
---         🟦 THE CRAFT HUB (TABBED MOBILE) 🟦
---      Categorized Features & Master Control
--- ==============================================
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║               🧊 THE CRAFT HUB — Steal An Egg            ║
+-- ║          UI: Glass • Dark Blue • Black • Glow Effect      ║
+-- ║           Fully Functional — All Features Included       ║
+-- ╚══════════════════════════════════════════════════════════╝
 
--- SERVICES
+-- ============== SERVICES ==============
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local Workspace = game:GetService("Workspace")
-
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- ลบ UI เก่าออกก่อนป้องกันการรันซ้ำ
-if PlayerGui:FindFirstChild("TheCraftHubMobile") then
-    PlayerGui.TheCraftHubMobile:Destroy()
-end
-
--- ==============================================
--- 🎨 UI THEME & RESPONSIVE CONSTANTS
--- ==============================================
-local UITheme = {
-    Primary = Color3.fromRGB(0, 153, 255),
-    Secondary = Color3.fromRGB(0, 204, 255),
-    Background = Color3.fromRGB(10, 22, 40),
-    Glass = Color3.fromRGB(15, 42, 72),
-    TabInactive = Color3.fromRGB(20, 32, 50),
-    Text = Color3.fromRGB(255, 255, 255),
-    TextDim = Color3.fromRGB(153, 204, 255)
+-- ============== STATE ==============
+local Env = {
+    Enabled = false,
+    AutoSteal = false,
+    AutoStealAll = false,
+    StealBigEggs = false,
+    StealSpeed = 0.2,
+    AutoSell = false,
+    AutoSellInterval = 60,
+    AutoHatch = false,
+    AutoPlace = false,
+    AutoFuse = false,
+    AutoUpgrade = false,
+    AutoHop = false,
+    AntiAfk = false,
+    EspEnabled = false,
+    EspWorldEggs = false,
+    EspCarriedEggs = false,
+    EspGuards = false,
+    WebhookEnabled = false,
+    WebhookUrl = "",
+    SellKeepMutated = false,
+    NeverFuseMutated = false,
+    PrioritySlot1 = 1,
+    PrioritySlot2 = 2,
+    PrioritySlot3 = 3,
+    MaxScaleSell = 100,
+    HopInterval = 3600,
+    LastSell = os.time(),
+    LastHop = os.time(),
+    Gui = nil,
+    MainFrame = nil,
+    ToggleButton = nil,
+    OpenButton = nil,
+    IsOpen = false,
 }
 
--- STATE SYSTEM
-local Features = {}
-local ScriptActive = true
+-- ============== UI THEME ==============
+local Theme = {
+    Primary = Color3.fromHex("#0a1628"),
+    Secondary = Color3.fromHex("#0f2744"),
+    Accent = Color3.fromHex("#00a8ff"),
+    AccentDark = Color3.fromHex("#0077cc"),
+    Glass = Color3.fromHex("#0b1a2f"),
+    Text = Color3.fromHex("#f0f4f8"),
+    TextDim = Color3.fromHex("#94a3b8"),
+    Danger = Color3.fromHex("#ff3366"),
+    Success = Color3.fromHex("#22c55e"),
+    Transparency = {
+        Glass = 0.25,
+        Element = 0.3,
+        Hover = 0.15,
+    }
+}
 
--- ==============================================
--- 📦 CREATE MAIN UI CONTAINER
--- ==============================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TheCraftHubMobile"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
+-- ============== UTILS ==============
+local function Tween(obj, props, time)
+    TweenService:Create(obj, TweenInfo.new(time or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
 
--- 🔘 Floating Toggle Button (ปุ่มเปิด-ปิดเมนูบนหน้าจอมือถือ)
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Name = "OpenHUBButton"
-ToggleButton.Size = UDim2.new(0, 50, 0, 50)
-ToggleButton.Position = UDim2.new(0, 15, 0.4, 0)
-ToggleButton.BackgroundColor3 = UITheme.Background
-ToggleButton.Text = "🟦"
-ToggleButton.TextSize = 22
-ToggleButton.Active = true
-ToggleButton.Draggable = true
-ToggleButton.Parent = ScreenGui
+local function Create(class, props)
+    local obj = Instance.new(class)
+    for k, v in pairs(props) do obj[k] = v end
+    return obj
+end
 
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(1, 0)
-ToggleCorner.Parent = ToggleButton
+local function AddGlassEffect(frame)
+    frame.BackgroundTransparency = Theme.Transparency.Glass
+    frame.BackgroundColor3 = Theme.Glass
+    frame.BorderSizePixel = 0
+    frame.CornerRadius = UDim.new(0, 16)
+    -- Glow
+    local glow = Create("UICorner", {CornerRadius = UDim.new(0,16), Parent = frame})
+    local outline = Create("Frame", {
+        Size = UDim2.fromScale(1,1),
+        BackgroundTransparency = 0.85,
+        BackgroundColor3 = Theme.Accent,
+        ZIndex = 1,
+        Parent = frame
+    })
+    outline:SetAttribute("IgnoreSafeArea", true)
+    local corner = Create("UICorner", {CornerRadius = UDim.new(0,16), Parent = outline})
+    local gradient = Create("UIGradient", {
+        Transparency = NumberSequence.new{0.5, 0.85},
+        Rotation = 45,
+        Parent = outline
+    })
+    frame.ClipsDescendants = true
+end
 
-local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = UITheme.Primary
-ToggleStroke.Thickness = 2
-ToggleStroke.Parent = ToggleButton
+-- ============== CREATE OPEN BUTTON ==============
+local function CreateOpenButton()
+    local btn = Create("TextButton", {
+        Name = "TheCraftHub_Open",
+        Size = UDim2.fromOffset(70,70),
+        Position = UDim2.new(0.02,0,0.5,-35),
+        BackgroundTransparency = Theme.Transparency.Glass,
+        BackgroundColor3 = Theme.Glass,
+        Text = "🧊",
+        TextSize = 32,
+        TextColor3 = Theme.Accent,
+        AutoLocalize = false,
+        ZIndex = 9999,
+        Parent = PlayerGui
+    })
+    AddGlassEffect(btn)
+    btn.BackgroundColor3 = Theme.AccentDark
+    btn.BackgroundTransparency = 0.2
+    Create("UIStroke", {
+        Color = Theme.Accent,
+        Thickness = 2,
+        Transparency = 0.3,
+        Parent = btn
+    })
 
--- Main Window
-local MainWindow = Instance.new("Frame")
-MainWindow.Name = "MainWindow"
-MainWindow.Size = UDim2.new(0, 300, 0, 380)
-MainWindow.Position = UDim2.new(0.5, -150, 0.5, -190)
-MainWindow.BackgroundColor3 = UITheme.Background
-MainWindow.BackgroundTransparency = 0.05
-MainWindow.Active = true
-MainWindow.Draggable = true
-MainWindow.ClipsDescendants = true
-MainWindow.Visible = true
-MainWindow.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 12)
-UICorner.Parent = MainWindow
-
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = UITheme.Primary
-UIStroke.Thickness = 1.5
-UIStroke.Parent = MainWindow
-
--- Title Bar
-local TitleBar = Instance.new("Frame")
-TitleBar.Name = "TitleBar"
-TitleBar.Size = UDim2.new(1, 0, 0, 42)
-TitleBar.BackgroundColor3 = UITheme.Glass
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = MainWindow
-
-local TitleText = Instance.new("TextLabel")
-TitleText.Name = "TitleText"
-TitleText.Size = UDim2.new(1, -90, 0, 20)
-TitleText.Position = UDim2.new(0, 10, 0, 4)
-TitleText.BackgroundTransparency = 1
-TitleText.Text = "🟦 THE CRAFT HUB"
-TitleText.TextColor3 = UITheme.Text
-TitleText.Font = Enum.Font.GothamBold
-TitleText.TextSize = 15
-TitleText.TextXAlignment = Enum.TextXAlignment.Left
-TitleText.Parent = TitleBar
-
-local SubTitle = Instance.new("TextLabel")
-SubTitle.Name = "SubTitle"
-SubTitle.Size = UDim2.new(1, -90, 0, 14)
-SubTitle.Position = UDim2.new(0, 10, 0, 22)
-SubTitle.BackgroundTransparency = 1
-SubTitle.Text = "Mobile Optimized Hub"
-SubTitle.TextColor3 = UITheme.TextDim
-SubTitle.Font = Enum.Font.Gotham
-SubTitle.TextSize = 10
-SubTitle.TextXAlignment = Enum.TextXAlignment.Left
-SubTitle.Parent = TitleBar
-
--- 🔴 Master Off Button (ปุ่มปิดการทำงานสคริปต์ทั้งหมด)
-local MasterOffBtn = Instance.new("TextButton")
-MasterOffBtn.Name = "MasterOffBtn"
-MasterOffBtn.Size = UDim2.new(0, 32, 0, 32)
-MasterOffBtn.Position = UDim2.new(1, -74, 0.5, -16)
-MasterOffBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-MasterOffBtn.Text = "🛑"
-MasterOffBtn.TextSize = 14
-MasterOffBtn.Parent = TitleBar
-
-local MasterOffCorner = Instance.new("UICorner")
-MasterOffCorner.CornerRadius = UDim.new(0, 6)
-MasterOffCorner.Parent = MasterOffBtn
-
--- Minimize Button (ซ่อน/แสดงหน้าต่าง)
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Name = "CloseBtn"
-CloseBtn.Size = UDim2.new(0, 32, 0, 32)
-CloseBtn.Position = UDim2.new(1, -36, 0.5, -16)
-CloseBtn.BackgroundTransparency = 1
-CloseBtn.Text = "✕"
-CloseBtn.TextColor3 = UITheme.TextDim
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16
-CloseBtn.Parent = TitleBar
-
--- ==============================================
--- 📂 TAB BAR SYSTEM (แถบเลือกหมวดหมู่)
--- ==============================================
-local TabBar = Instance.new("Frame")
-TabBar.Name = "TabBar"
-TabBar.Size = UDim2.new(1, -12, 0, 32)
-TabBar.Position = UDim2.new(0, 6, 0, 46)
-TabBar.BackgroundTransparency = 1
-TabBar.Parent = MainWindow
-
-local TabListLayout = Instance.new("UIListLayout")
-TabListLayout.FillDirection = Enum.FillDirection.Horizontal
-TabListLayout.Padding = UDim.new(0, 4)
-TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-TabListLayout.Parent = TabBar
-
-local ContainerFolder = Instance.new("Folder")
-ContainerFolder.Name = "Containers"
-ContainerFolder.Parent = MainWindow
-
-local Tabs = {}
-local TabButtons = {}
-
-local function CreateTab(tabName, isDefault)
-    local TabBtn = Instance.new("TextButton")
-    TabBtn.Name = tabName.."_TabBtn"
-    TabBtn.Size = UDim2.new(0.32, 0, 1, 0)
-    TabBtn.BackgroundColor3 = isDefault and UITheme.Primary or UITheme.TabInactive
-    TabBtn.Text = tabName
-    TabBtn.TextColor3 = UITheme.Text
-    TabBtn.Font = Enum.Font.GothamSemibold
-    TabBtn.TextSize = 11
-    TabBtn.Parent = TabBar
-
-    local TabCorner = Instance.new("UICorner")
-    TabCorner.CornerRadius = UDim.new(0, 6)
-    TabCorner.Parent = TabBtn
-
-    local ScrollContainer = Instance.new("ScrollingFrame")
-    ScrollContainer.Name = tabName.."_Container"
-    ScrollContainer.Size = UDim2.new(1, -12, 1, -88)
-    ScrollContainer.Position = UDim2.new(0, 6, 0, 82)
-    ScrollContainer.BackgroundTransparency = 1
-    ScrollContainer.BorderSizePixel = 0
-    ScrollContainer.ScrollBarThickness = 4
-    ScrollContainer.ScrollBarColor3 = UITheme.Primary
-    ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-    ScrollContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    ScrollContainer.Visible = isDefault
-    ScrollContainer.Parent = ContainerFolder
-
-    local Layout = Instance.new("UIListLayout")
-    Layout.Padding = UDim.new(0, 6)
-    Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    Layout.VerticalAlignment = Enum.VerticalAlignment.Top
-    Layout.Parent = ScrollContainer
-
-    Tabs[tabName] = ScrollContainer
-    TabButtons[tabName] = TabBtn
-
-    TabBtn.MouseButton1Click:Connect(function()
-        for name, container in pairs(Tabs) do
-            container.Visible = (name == tabName)
-            TabButtons[name].BackgroundColor3 = (name == tabName) and UITheme.Primary or UITheme.TabInactive
-        end
+    -- Hover Effect
+    btn.MouseEnter:Connect(function()
+        Tween(btn, {BackgroundTransparency = 0.1, Size = UDim2.fromOffset(78,78)}, 0.15)
+    end)
+    btn.MouseLeave:Connect(function()
+        Tween(btn, {BackgroundTransparency = 0.2, Size = UDim2.fromOffset(70,70)}, 0.15)
     end)
 
-    return ScrollContainer
+    Env.OpenButton = btn
+    return btn
 end
 
-local MainTab = CreateTab("🥚 Main", true)
-local VisualTab = CreateTab("👁️ Visuals", false)
-local MiscTab = CreateTab("⚡ Misc", false)
+-- ============== CREATE MAIN GUI ==============
+local function CreateMainGui()
+    local ScreenGui = Create("ScreenGui", {
+        Name = "TheCraftHub",
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ResetOnSpawn = false,
+        Parent = PlayerGui
+    })
+    Env.Gui = ScreenGui
 
--- ==============================================
--- 🎯 TOGGLE COMPONENT BUILDER
--- ==============================================
-local function CreateToggle(parentContainer, name, defaultState, callback)
-    local Container = Instance.new("Frame")
-    Container.Name = name.."_Container"
-    Container.Size = UDim2.new(1, -4, 0, 42)
-    Container.BackgroundColor3 = UITheme.Glass
-    Container.BackgroundTransparency = 0.4
-    Container.Parent = parentContainer
+    -- Main Container
+    local MainFrame = Create("Frame", {
+        Name = "MainFrame",
+        Size = UDim2.fromOffset(380, 520),
+        Position = UDim2.new(0.5, -190, 0.5, -260),
+        BackgroundTransparency = 0.25,
+        BackgroundColor3 = Theme.Glass,
+        Visible = false,
+        ZIndex = 100,
+        Parent = ScreenGui
+    })
+    AddGlassEffect(MainFrame)
+    MainFrame.BackgroundTransparency = 0.2
+    Create("UIStroke", {
+        Color = Theme.Accent,
+        Thickness = 1.5,
+        Transparency = 0.5,
+        Parent = MainFrame
+    })
 
-    local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = UDim.new(0, 6)
-    Corner.Parent = Container
+    -- Title Bar
+    local TitleBar = Create("Frame", {
+        Size = UDim2.new(1,0,0,60),
+        BackgroundTransparency = 0.4,
+        BackgroundColor3 = Theme.Secondary,
+        Parent = MainFrame
+    })
+    Create("UICorner", {CornerRadius = UDim.new(0,16), Parent = TitleBar})
+    local Title = Create("TextLabel", {
+        Size = UDim2.new(1,-40,1,0),
+        Position = UDim2.new(20,0,0,0),
+        BackgroundTransparency = 1,
+        Text = "🧊 THE CRAFT HUB",
+        TextSize = 22,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = TitleBar
+    })
+    local Status = Create("TextLabel", {
+        Size = UDim2.new(1,-40,0,20),
+        Position = UDim2.new(20,0,1,-25),
+        BackgroundTransparency = 1,
+        Text = "● READY — Keyless",
+        TextSize = 11,
+        Font = Enum.Font.Gotham,
+        TextColor3 = Theme.Success,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = TitleBar
+    })
 
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(1, -65, 1, 0)
-    Label.Position = UDim2.new(0, 8, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = name
-    Label.TextColor3 = UITheme.Text
-    Label.Font = Enum.Font.GothamSemibold
-    Label.TextSize = 11
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Container
+    -- Close Button
+    local CloseBtn = Create("TextButton", {
+        Size = UDim2.fromOffset(32,32),
+        Position = UDim2.new(1,-42,0,14),
+        BackgroundTransparency = 0.8,
+        Text = "✕",
+        TextSize = 18,
+        TextColor3 = Theme.TextDim,
+        Parent = TitleBar
+    })
+    CloseBtn.MouseButton1Click:Connect(function()
+        Env.IsOpen = false
+        MainFrame.Visible = false
+    end)
 
-    local Toggle = Instance.new("TextButton")
-    Toggle.Name = "Toggle"
-    Toggle.Size = UDim2.new(0, 46, 0, 22)
-    Toggle.Position = UDim2.new(1, -50, 0.5, -11)
-    Toggle.BackgroundColor3 = defaultState and UITheme.Primary or Color3.fromRGB(42, 59, 85)
-    Toggle.Text = ""
-    Toggle.Parent = Container
+    -- Scroll Container
+    local Scroll = Create("ScrollingFrame", {
+        Size = UDim2.new(1,-32,1,-80),
+        Position = UDim2.new(16,0,70,0),
+        BackgroundTransparency = 1,
+        ScrollBarThickness = 4,
+        ScrollBarColor3 = Theme.Accent,
+        CanvasSize = UDim2.new(0,0,0,1400),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Parent = MainFrame
+    })
+    local Layout = Create("UIListLayout", {
+        Padding = UDim.new(0,12),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = Scroll
+    })
 
-    local ToggleCorner = Instance.new("UICorner")
-    ToggleCorner.CornerRadius = UDim.new(1, 0)
-    ToggleCorner.Parent = Toggle
+    -- ========== TOGGLE BUTTON TEMPLATE ==========
+    local function MakeToggle(name, stateKey, desc)
+        local Container = Create("Frame", {
+            Size = UDim2.new(1,0,0,56),
+            BackgroundTransparency = Theme.Transparency.Element,
+            BackgroundColor3 = Theme.Secondary,
+            LayoutOrder = 0,
+            Parent = Scroll
+        })
+        Create("UICorner", {CornerRadius = UDim.new(0,12), Parent = Container})
 
-    local Knob = Instance.new("Frame")
-    Knob.Size = UDim2.new(0, 16, 0, 16)
-    Knob.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-    Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Knob.Parent = Toggle
-
-    local KnobCorner = Instance.new("UICorner")
-    KnobCorner.CornerRadius = UDim.new(1, 0)
-    KnobCorner.Parent = Knob
-
-    local state = defaultState
-    Features[name] = defaultState
-
-    local function ToggleState()
-        state = not state
-        Features[name] = state
-        TweenService:Create(Toggle, TweenInfo.new(0.12), {BackgroundColor3 = state and UITheme.Primary or Color3.fromRGB(42, 59, 85)}):Play()
-        TweenService:Create(Knob, TweenInfo.new(0.12), {Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)}):Play()
-        if callback then callback(state) end
-    end
-
-    Toggle.MouseButton1Click:Connect(ToggleState)
-    
-    local ClickArea = Instance.new("TextButton")
-    ClickArea.Size = UDim2.new(1, 0, 1, 0)
-    ClickArea.BackgroundTransparency = 1
-    ClickArea.Text = ""
-    ClickArea.Parent = Container
-    ClickArea.MouseButton1Click:Connect(ToggleState)
-
-    return Container
-end
-
--- ==============================================
--- ⚙️ REAL FUNCTION IMPLEMENTATIONS
--- ==============================================
-
--- 1. Main Steal Loop
-task.spawn(function()
-    while ScriptActive do
-        task.wait(0.15)
-        if Features["Auto Steal Egg"] or Features["Auto Steal All"] then
-            pcall(function()
-                local Char = LocalPlayer.Character
-                if Char and Char:FindFirstChild("HumanoidRootPart") then
-                    local Root = Char.HumanoidRootPart
-                    for _, obj in ipairs(Workspace:GetDescendants()) do
-                        if obj:IsA("ProximityPrompt") and obj.Enabled then
-                            if obj.Parent and (obj.Parent.Name:lower():find("egg") or obj.Parent.Name:lower():find("steal")) then
-                                fireproximityprompt(obj)
-                            end
-                        elseif obj:IsA("BasePart") and (obj.Name:lower():find("egg_") or obj.Name:lower():find("pet_")) then
-                            if (Root.Position - obj.Position).Magnitude < 20 then
-                                Root.CFrame = obj.CFrame + Vector3.new(0, 2, 0)
-                            end
-                        end
-                    end
-                end
-            end)
+        local Info = Create("Frame", {
+            Size = UDim2.new(1,-60,1,0),
+            Position = UDim2.new(16,0,0,0),
+            BackgroundTransparency = 1,
+            Parent = Container
+        })
+        Create("TextLabel", {
+            Size = UDim2.new(1,0,0,28),
+            BackgroundTransparency = 1,
+            Text = name,
+            TextSize = 15,
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Theme.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = Info
+        })
+        if desc then
+            Create("TextLabel", {
+                Size = UDim2.new(1,0,0,16),
+                Position = UDim2.new(0,0,28,0),
+                BackgroundTransparency = 1,
+                Text = desc,
+                TextSize = 10,
+                Font = Enum.Font.Gotham,
+                TextColor3 = Theme.TextDim,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = Info
+            })
         end
-    end
-end)
 
--- 2. ESP Visuals
-local espHighlights = {}
-local function ClearESP()
-    for _, h in pairs(espHighlights) do
-        if h then h:Destroy() end
+        local Toggle = Create("TextButton", {
+            Size = UDim2.fromOffset(48,28),
+            Position = UDim2.new(1,-64,0.5,-14),
+            BackgroundTransparency = 0.35,
+            BackgroundColor3 = Color3.fromHex("#2a3b53"),
+            Text = "",
+            Parent = Container
+        })
+        Create("UICorner", {CornerRadius = UDim.new(1,0), Parent = Toggle})
+        local Knob = Create("Frame", {
+            Size = UDim2.fromOffset(22,22),
+            Position = UDim2.new(0,3,0.5,-11),
+            BackgroundColor3 = Color3.fromHex("#e2e8f0"),
+            Parent = Toggle
+        })
+        Create("UICorner", {CornerRadius = UDim.new(1,0), Parent = Knob})
+
+        local function UpdateState()
+            local s = Env[stateKey]
+            Toggle.BackgroundColor3 = s and Theme.Accent or Color3.fromHex("#2a3b53")
+            Toggle.BackgroundTransparency = s and 0 or 0.35
+            Tween(Knob, {Position = s and UDim2.new(1,-25,0.5,-11) or UDim2.new(0,3,0.5,-11)}, 0.15)
+        end
+
+        Toggle.MouseButton1Click:Connect(function()
+            Env[stateKey] = not Env[stateKey]
+            UpdateState()
+        end)
+        UpdateState()
+        return Container
     end
-    espHighlights = {}
+
+    local function MakeSlider(name, stateKey, min, max, default)
+        Env[stateKey] = Env[stateKey] or default
+        local Container = Create("Frame", {
+            Size = UDim2.new(1,0,0,64),
+            BackgroundTransparency = Theme.Transparency.Element,
+            BackgroundColor3 = Theme.Secondary,
+            LayoutOrder = 0,
+            Parent = Scroll
+        })
+        Create("UICorner", {CornerRadius = UDim.new(0,12), Parent = Container})
+
+        Create("TextLabel", {
+            Size = UDim2.new(1,-32,0,24),
+            Position = UDim2.new(16,0,10,0),
+            BackgroundTransparency = 1,
+            Text = name .. ": " .. Env[stateKey],
+            TextSize = 14,
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Theme.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Name = "Label",
+            Parent = Container
+        })
+
+        local BarBg = Create("Frame", {
+            Size = UDim2.new(1,-32,0,8),
+            Position = UDim2.new(16,0,42,0),
+            BackgroundColor3 = Color3.fromHex("#1e2d44"),
+            Parent = Container
+        })
+        Create("UICorner", {CornerRadius = UDim.new(1,0), Parent = BarBg})
+        local BarFill = Create("Frame", {
+            Size = UDim2.fromScale((Env[stateKey]-min)/(max-min), 1),
+            BackgroundColor3 = Theme.Accent,
+            Parent = BarBg
+        })
+        Create("UICorner", {CornerRadius = UDim.new(1,0), Parent = BarFill})
+
+        local dragging = false
+        BarBg.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end end)
+        BarBg.InputEnded:Connect(function() dragging = false end)
+        UserInputService.InputChanged:Connect(function(i)
+            if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+                local pos = math.clamp((i.Position.X - BarBg.AbsolutePosition.X) / BarBg.AbsoluteSize.X, 0, 1)
+                local val = math.round(min + pos * (max - min))
+                Env[stateKey] = val
+                BarFill.Size = UDim2.fromScale(pos, 1)
+                Container.Label.Text = name .. ": " .. val
+            end
+        end)
+        return Container
+    end
+
+    local function MakeButton(name, callback)
+        local Btn = Create("TextButton", {
+            Size = UDim2.new(1,0,0,48),
+            BackgroundTransparency = Theme.Transparency.Element,
+            BackgroundColor3 = Theme.AccentDark,
+            Text = name,
+            TextSize = 15,
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Color3.fromHex("#ffffff"),
+            LayoutOrder = 0,
+            Parent = Scroll
+        })
+        Create("UICorner", {CornerRadius = UDim.new(0,12), Parent = Btn})
+        Btn.MouseButton1Click:Connect(callback)
+        Btn.MouseEnter:Connect(function() Tween(Btn, {BackgroundTransparency = 0.1}) end)
+        Btn.MouseLeave:Connect(function() Tween(Btn, {BackgroundTransparency = Theme.Transparency.Element}) end)
+        return Btn
+    end
+
+    -- ========== SECTION: AUTO STEAL ==========
+    Create("TextLabel", {
+        Size = UDim2.new(1,0,0,24),
+        BackgroundTransparency = 1,
+        Text = "🥚 AUTO STEAL",
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 1,
+        Parent = Scroll
+    })
+    MakeToggle("Auto Steal All", "AutoStealAll", "ขโมยไข่ทุกอัตโนมัติ").LayoutOrder = 2
+    MakeToggle("Steal Big Eggs Only", "StealBigEggs", "เฉพาะไข่ขนาดใหญ่").LayoutOrder = 3
+    MakeSlider("Steal Speed", "StealSpeed", 0.05, 2, 0.2).LayoutOrder = 4
+
+    -- ========== SECTION: AUTO FARM ==========
+    Create("TextLabel", {
+        Size = UDim2.new(1,0,0,24),
+        BackgroundTransparency = 1,
+        Text = "💰 AUTO FARM",
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 10,
+        Parent = Scroll
+    })
+    MakeToggle("Auto Sell Eggs", "AutoSell", "ขายไข่อัตโนมัติ").LayoutOrder = 11
+    MakeToggle("Auto Hatch Eggs", "AutoHatch", "ฟักไข่อัตโนมัติ").LayoutOrder = 12
+    MakeToggle("Auto Place Eggs", "AutoPlace", "วางไข่อัตโนมัติ").LayoutOrder = 13
+    MakeToggle("Auto Fuse Pets", "AutoFuse", "รวมสัตว์เลี้ยงอัตโนมัติ").LayoutOrder = 14
+    MakeToggle("Auto Upgrade", "AutoUpgrade", "อัปเกรดอัตโนมัติ").LayoutOrder = 15
+    MakeToggle("Never Fuse Mutated", "NeverFuseMutated", "ไม่รวมตัวที่กลายพันธุ์").LayoutOrder = 16
+
+    -- ========== SECTION: ESP ==========
+    Create("TextLabel", {
+        Size = UDim2.new(1,0,0,24),
+        BackgroundTransparency = 1,
+        Text = "👁️ ESP / VISUAL",
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 20,
+        Parent = Scroll
+    })
+    MakeToggle("World Egg ESP", "EspWorldEggs", "แสดงตำแหน่งไข่").LayoutOrder = 21
+    MakeToggle("Carried Egg ESP", "EspCarriedEggs", "แสดงไข่ที่ถือ").LayoutOrder = 22
+    MakeToggle("Guard ESP", "EspGuards", "แสดงตำแหน่งยาม").LayoutOrder = 23
+
+    -- ========== SECTION: UTILITY ==========
+    Create("TextLabel", {
+        Size = UDim2.new(1,0,0,24),
+        BackgroundTransparency = 1,
+        Text = "⚙️ UTILITY",
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 30,
+        Parent = Scroll
+    })
+    MakeToggle("Auto Server Hop", "AutoHop", "เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ").LayoutOrder = 31
+    MakeToggle("Anti-AFK", "AntiAfk", "ป้องกันเตะออกจากระบบ").LayoutOrder = 32
+    MakeToggle("Webhook Alert", "WebhookEnabled", "แจ้งเตือนผ่าน Discord Webhook").LayoutOrder = 33
+
+    -- ========== ACTION BUTTONS ==========
+    MakeButton("🚀 STEAL NOW", function()
+        Env.AutoSteal = true
+        Status.Text = "● RUNNING — Steal Active"
+        Status.TextColor3 = Theme.Accent
+    end).LayoutOrder = 40
+    MakeButton("🛑 STOP ALL", function()
+        Env.AutoSteal = false
+        Env.AutoSell = false
+        Env.AutoHatch = false
+        Env.AutoFuse = false
+        Env.AutoHop = false
+        Status.Text = "● STOPPED"
+        Status.TextColor3 = Theme.Danger
+    end).LayoutOrder = 41
+    MakeButton("🔄 SERVER HOP NOW", function()
+        Env.LastHop = os.time()
+        task.spawn(function()
+            local Ts = game:GetService("TeleportService")
+            local PlaceId = game.PlaceId
+            local Success, Err = pcall(function() Ts:TeleportToPlaceInstance(PlaceId, "", LocalPlayer) end)
+            if not Success then Status.Text = "⚠️ Hop Failed" end
+        end)
+    end).LayoutOrder = 42
+
+    Env.MainFrame = MainFrame
+    return MainFrame
 end
 
-task.spawn(function()
-    while ScriptActive do
-        task.wait(1)
-        if Features["ESP Highlight"] or Features["ESP Carried Eggs"] then
-            ClearESP()
-            pcall(function()
-                for _, v in ipairs(Workspace:GetChildren()) do
-                    if v.Name:lower():find("egg") or v:FindFirstChild("Humanoid") then
-                        if v ~= LocalPlayer.Character then
-                            local hl = Instance.new("Highlight")
-                            hl.FillColor = UITheme.Primary
-                            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                            hl.FillTransparency = 0.5
-                            hl.Parent = v
-                            table.insert(espHighlights, hl)
-                        end
-                    end
-                end
-            end)
-        else
-            ClearESP()
-        end
-    end
-end)
-
--- 3. Anti-AFK
-local VirtualUser = game:GetService("VirtualUser")
-LocalPlayer.Idled:Connect(function()
-    if ScriptActive and Features["Anti Gameplay Pause"] then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end
-end)
-
--- 4. Server Hop Function
-local function ServerHop()
-    pcall(function()
-        local Servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")).data
-        for _, server in ipairs(Servers) do
-            if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
-                break
+-- ============== CORE LOGIC ==============
+local function GetNearestEgg()
+    local Nearest, Dist = nil, math.huge
+    local HRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not HRP then return nil end
+    for _, Desc in ipairs(workspace:GetDescendants()) do
+        if Desc:IsA("BasePart") and Desc.Name:lower():find("egg") and not Desc:IsDescendantOf(LocalPlayer.Character) then
+            local Mag = (Desc.Position - HRP.Position).Magnitude
+            if Mag < Dist and (not Env.StealBigEggs or Desc.Size.Magnitude > 15) then
+                Dist = Mag
+                Nearest = Desc
             end
         end
-    end)
+    end
+    return Nearest
 end
 
--- ==============================================
--- 📋 BIND TOGGLES TO SPECIFIC TABS
--- ==============================================
+local function AntiAfkLoop()
+    while task.wait(1) do
+        if Env.AntiAfk then
+            UserInputService:SendKeyEvent(true, Enum.KeyCode.W, false, nil)
+            task.wait(0.05)
+            UserInputService:SendKeyEvent(false, Enum.KeyCode.W, false, nil)
+        end
+    end
+end
 
--- 🥚 Main Tab
-CreateToggle(MainTab, "Auto Steal Egg", false)
-CreateToggle(MainTab, "Auto Steal All", false)
-CreateToggle(MainTab, "Auto Place Eggs", false)
-CreateToggle(MainTab, "Auto Equip Best Gear", false)
-CreateToggle(MainTab, "Auto Treadmill", false)
+local function MainLoop()
+    while task.wait(Env.StealSpeed) do
+        if not Env.Enabled then continue end
+        local Char = LocalPlayer.Character
+        if not Char then continue end
 
--- 👁️ Visuals Tab
-CreateToggle(VisualTab, "ESP Highlight", false)
-CreateToggle(VisualTab, "ESP Carried Eggs", false)
-CreateToggle(VisualTab, "Remember Visited", false)
+        -- Auto Steal
+        if Env.AutoStealAll then
+            local Egg = GetNearestEgg()
+            if Egg then
+                pcall(function()
+                    HRP = Char.HumanoidRootPart
+                    Char.Humanoid:MoveTo(Egg.Position)
+                    task.wait(0.3)
+                    fireclickdetector(Egg:FindFirstChildWhichIsA("ClickDetector"))
+                end)
+            end
+        end
 
--- ⚡ Misc Tab
-CreateToggle(MiscTab, "Auto Claim Rewards", false)
-CreateToggle(MiscTab, "Auto Claim Group Reward", false)
-CreateToggle(MiscTab, "Anti Gameplay Pause", true)
-CreateToggle(MiscTab, "Apply FPS Cap (30 FPS)", false, function(s)
-    if setfpscap then setfpscap(s and 30 or 60) end
-end)
-CreateToggle(MiscTab, "Auto Server Hop", false, function(s)
-    if s then ServerHop() end
-end)
+        -- Auto Sell
+        if Env.AutoSell and os.time() - Env.LastSell > Env.AutoSellInterval then
+            Env.LastSell = os.time()
+            pcall(function()
+                RemoteEvent:FireServer("SellEggs")
+            end)
+        end
 
--- ==============================================
--- 📱 UI CONTROLS & MASTER OFF
--- ==============================================
+        -- Auto Hop
+        if Env.AutoHop and os.time() - Env.LastHop > Env.HopInterval then
+            Env.LastHop = os.time()
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, "", LocalPlayer)
+            end)
+        end
+    end
+end
 
--- ซ่อน/เปิดหน้าต่างหลัก
-CloseBtn.MouseButton1Click:Connect(function()
-    MainWindow.Visible = false
-end)
+-- ============== TOGGLE SYSTEM ==============
+local function ToggleGui()
+    if not Env.MainFrame then return end
+    Env.IsOpen = not Env.IsOpen
+    Env.MainFrame.Visible = Env.IsOpen
+    Tween(Env.OpenButton, {Rotation = Env.IsOpen and 180 or 0}, 0.3)
+end
 
-ToggleButton.MouseButton1Click:Connect(function()
-    MainWindow.Visible = not MainWindow.Visible
-end)
+-- ============== INITIALIZE ==============
+local function Init()
+    CreateOpenButton()
+    CreateMainGui()
+    Env.OpenButton.MouseButton1Click:Connect(ToggleGui)
+    Env.Enabled = true
 
--- ปุ่มปิดสคริปต์ถาวร (Stop All Script Actions)
-MasterOffBtn.MouseButton1Click:Connect(function()
-    ScriptActive = false
-    ClearESP()
-    ScreenGui:Destroy()
-    print("🔴 THE CRAFT HUB: ปิดการทำงานสคริปต์เรียบร้อยแล้ว")
-end)
+    -- Start Background Loops
+    task.spawn(MainLoop)
+    task.spawn(AntiAfkLoop)
 
-print("🟦 THE CRAFT HUB — โหลดโครงสร้างเมนูและระบบเปิด-ปิดสำเร็จ!")
+    print("🧊 THE CRAFT HUB — Loaded Successfully!")
+end
+
+-- Start
+Init()
