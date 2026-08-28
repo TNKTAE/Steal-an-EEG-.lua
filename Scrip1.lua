@@ -1,5 +1,5 @@
 -- ==========================================
--- THE CRAFT HUB - Ultra Professional Vector Edition
+-- THE CRAFT HUB - High-Speed Walk & Instant Collection Edition
 -- Theme: Dark Navy Blue & Pure Black
 -- Language: Lua
 -- ==========================================
@@ -23,13 +23,14 @@ local Config = {
     WalkSpeed = 16,
     WalkSpeedBypass = false,
     FastAttack = false,
-    AutoHoldEgg = true, -- ถือไข่อัตโนมัติเมื่อตกใส่มือ
-    AutoReturnBase = true, -- ถือไข่ในมือแล้ววาร์ปกลับฐาน
+    AutoHoldEgg = true, -- ถือไข่อัตโนมัติเมื่อเข้ากระเป๋า
+    AutoReturnBase = true, -- ถือไข่ในมือแล้วกลับฐาน
     AntiAFK = false,
 
     -- Eggs & Stealing
-    AutoStealEgg = false,
-    InstantCollectEgg = true, -- กดเก็บไข่ทันที ไม่ต้องกดค้าง
+    AutoStealEgg = false, -- เดินขโมยไข่ด้วยความเร็วสูง
+    StealSpeed = 120, -- ความเร็วในการเดินไปขโมยไข่
+    InstantCollectEgg = true, -- กดเก็บไข่ทีเดียว/ไว ไม่ต้องกดค้าง
     KeepEggs = false,
 
     -- Event
@@ -58,7 +59,7 @@ LocalPlayer.CharacterAdded:Connect(UpdateBasePosition)
 -- 2. CORE REAL-WORKING FUNCTIONS
 -- ==========================================
 
--- ระบบ WalkSpeed
+-- ระบบปรับ WalkSpeed
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -99,7 +100,7 @@ task.spawn(function()
     end
 end)
 
--- ระบบถือไข่อัตโนมัติ + ถือไข่แล้ววาร์ปกลับฐานทันที
+-- ระบบถือไข่อัตโนมัติ + ถือไข่ในมือเท่านั้นแล้วกลับฐาน
 task.spawn(function()
     while true do
         task.wait(0.05)
@@ -108,37 +109,40 @@ task.spawn(function()
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
 
-            local isHoldingEgg = false
-
-            -- 1. ย้ายไข่จาก Backpack มาใส่เข้ามือทันที
+            -- 1. ย้ายไข่จาก Backpack มาใส่เข้ามือผู้เล่น
             if Config.AutoHoldEgg and backpack then
                 for _, item in pairs(backpack:GetChildren()) do
                     if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
                         item.Parent = char
-                        isHoldingEgg = true
                     end
                 end
             end
 
-            -- 2. ตรวจสอบว่าในมือถือไข่อยู่หรือไม่
+            -- 2. ตรวจสอบว่าถือไข่อยู่ในมือผู้เล่น (Character) หรือไม่ (ไม่นับไข่ในกระเป๋า)
+            local isHoldingEggInHand = false
             if char then
                 for _, item in pairs(char:GetChildren()) do
                     if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
-                        isHoldingEgg = true
+                        isHoldingEggInHand = true
                     end
                 end
             end
 
-            -- 3. หากถือไข่อยู่ในมือแล้ว วาร์ปกลับฐานทันที
-            if Config.AutoReturnBase and isHoldingEgg and hrp and BasePosition then
-                hrp.CFrame = BasePosition
-                task.wait(0.2)
+            -- 3. หากถือไข่อยู่ในมือ ให้เดิน/เคลื่อนที่กลับฐานทันที
+            if Config.AutoReturnBase and isHoldingEggInHand and hrp and BasePosition then
+                local dist = (hrp.Position - BasePosition.Position).Magnitude
+                if dist > 5 then
+                    local timeToReach = dist / Config.StealSpeed
+                    local tween = TweenService:Create(hrp, TweenInfo.new(timeToReach, Enum.EasingStyle.Linear), {CFrame = BasePosition})
+                    tween:Play()
+                    tween.Completed:Wait()
+                end
             end
         end)
     end
 end)
 
--- ระบบขโมยไข่ + กดเก็บไข่ทันที (Instant Bypass)
+-- ระบบเดินไปขโมยไข่ด้วยความเร็วสูง + กดเก็บไข่ทีเดียว/ไว ไม่ต้องกดค้าง
 task.spawn(function()
     while true do
         task.wait(0.03)
@@ -158,17 +162,25 @@ task.spawn(function()
                         local targetPart = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")))
                         if targetPart then
 
-                            -- วาร์ปไปหาไข่
+                            -- เดินไปหาไข่ด้วยความเร็วสูง (High-Speed Walk) ไม่ใช้วาร์ป
                             if Config.AutoStealEgg then
-                                hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 1.5, 0))
+                                local targetCFrame = CFrame.new(targetPart.Position + Vector3.new(0, 1.5, 0))
+                                local dist = (hrp.Position - targetPart.Position).Magnitude
+
+                                if dist > 3 then
+                                    local moveTime = dist / Config.StealSpeed
+                                    local tween = TweenService:Create(hrp, TweenInfo.new(moveTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
+                                    tween:Play()
+                                    tween.Completed:Wait()
+                                end
                             end
 
-                            -- Bypass กดเก็บไข่ทันทีไม่ต้องกดค้าง
+                            -- กดเก็บไข่ทีเดียว/ไว (Instant Bypass Prompt)
                             local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChild("Prompt", true)
                             local clicker = obj:FindFirstChildOfClass("ClickDetector")
 
                             if prompt then
-                                prompt.HoldDuration = 0
+                                prompt.HoldDuration = 0 -- ยกเลิกการกดค้าง
                                 if fireproximityprompt then
                                     fireproximityprompt(prompt)
                                 end
@@ -213,7 +225,12 @@ task.spawn(function()
                     if isBlueTree then
                         local targetPart = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")))
                         if targetPart then
-                            hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2, 3))
+                            local targetCFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2, 3))
+                            local dist = (hrp.Position - targetPart.Position).Magnitude
+                            local moveTime = dist / Config.StealSpeed
+                            local tween = TweenService:Create(hrp, TweenInfo.new(moveTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
+                            tween:Play()
+                            tween.Completed:Wait()
 
                             local tool = char:FindFirstChildOfClass("Tool")
                             if tool then
@@ -232,7 +249,7 @@ task.spawn(function()
     end
 end)
 
--- ระบบ ESP
+-- ระบบ ESP Visuals
 local function UpdateESP(targetType, enable)
     if ESP_Storage[targetType] then
         for _, v in pairs(ESP_Storage[targetType]) do
@@ -269,6 +286,7 @@ local function UpdateESP(targetType, enable)
                     txt.TextColor3 = Color3.fromRGB(255, 100, 100)
                     txt.Font = Enum.Font.GothamBold
                     txt.TextSize = 10
+                    txt.TextWrapped = true
                     txt.Parent = bb
 
                     table.insert(ESP_Storage["Player"], highlight)
@@ -299,6 +317,7 @@ local function UpdateESP(targetType, enable)
                     txt.TextColor3 = Color3.fromRGB(0, 170, 255)
                     txt.Font = Enum.Font.GothamBold
                     txt.TextSize = 10
+                    txt.TextWrapped = true
                     txt.Parent = bb
 
                     table.insert(ESP_Storage["Egg"], highlight)
@@ -317,7 +336,7 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 -- ==========================================
--- 3. PERFECT VECTOR UI CREATION
+-- 3. PERFECT VECTOR UI CREATION (FIXED WRAPPING)
 -- ==========================================
 if CoreGui:FindFirstChild("TheCraftHubGUI") then
     CoreGui.TheCraftHubGUI:Destroy()
@@ -330,8 +349,8 @@ ScreenGui.Parent = CoreGui
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 680, 0, 370)
-MainFrame.Position = UDim2.new(0.5, -340, 0.5, -185)
+MainFrame.Size = UDim2.new(0, 680, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -340, 0.5, -190)
 MainFrame.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -357,12 +376,11 @@ local TopBarCorner = Instance.new("UICorner")
 TopBarCorner.CornerRadius = UDim.new(0, 8)
 TopBarCorner.Parent = TopBar
 
--- Vector Logo Icon
 local LogoIcon = Instance.new("ImageLabel")
 LogoIcon.Size = UDim2.new(0, 22, 0, 22)
 LogoIcon.Position = UDim2.new(0, 12, 0, 11)
 LogoIcon.BackgroundTransparency = 1
-LogoIcon.Image = "rbxassetid://6031068421" -- Vector Shield / Hub Icon
+LogoIcon.Image = "rbxassetid://6031068421"
 LogoIcon.ImageColor3 = Color3.fromRGB(0, 170, 255)
 LogoIcon.Parent = TopBar
 
@@ -377,12 +395,11 @@ TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Parent = TopBar
 
--- Vector Close Button
 local CloseBtn = Instance.new("ImageButton")
 CloseBtn.Size = UDim2.new(0, 20, 0, 20)
 CloseBtn.Position = UDim2.new(1, -32, 0, 12)
 CloseBtn.BackgroundTransparency = 1
-CloseBtn.Image = "rbxassetid://6031094678" -- Vector Close X Icon
+CloseBtn.Image = "rbxassetid://6031094678"
 CloseBtn.ImageColor3 = Color3.fromRGB(180, 180, 180)
 CloseBtn.Parent = TopBar
 
@@ -474,12 +491,12 @@ local function CreateTab(tabName, iconAssetId)
 end
 
 -- ==========================================
--- 4. UI COMPONENTS BUILDER
+-- 4. UI COMPONENTS BUILDER (PERFECT WRAPPING)
 -- ==========================================
 
 local function AddToggle(parentPage, name, configKey, callback)
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, -10, 0, 38)
+    Frame.Size = UDim2.new(1, -10, 0, 40)
     Frame.BackgroundColor3 = Color3.fromRGB(12, 16, 26)
     Frame.Parent = parentPage
 
@@ -488,13 +505,14 @@ local function AddToggle(parentPage, name, configKey, callback)
     Corner.Parent = Frame
 
     local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Size = UDim2.new(0.72, 0, 1, 0)
     Label.Position = UDim2.new(0, 12, 0, 0)
     Label.Text = name
     Label.TextColor3 = Color3.fromRGB(220, 220, 220)
     Label.Font = Enum.Font.GothamMedium
-    Label.TextSize = 11
+    Label.TextSize = 10
     Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextWrapped = true -- บังคับให้ตัดบรรทัดเมื่อข้อความยาวเกินไป
     Label.BackgroundTransparency = 1
     Label.Parent = Frame
 
@@ -527,7 +545,8 @@ local function AddButton(parentPage, name, callback)
     Button.Text = name
     Button.TextColor3 = Color3.fromRGB(0, 170, 255)
     Button.Font = Enum.Font.GothamBold
-    Button.TextSize = 11
+    Button.TextSize = 10
+    Button.TextWrapped = true
     Button.Parent = parentPage
 
     local Corner = Instance.new("UICorner")
@@ -544,7 +563,7 @@ end
 
 local function AddInputBox(parentPage, name, placeholder, callback)
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, -10, 0, 38)
+    Frame.Size = UDim2.new(1, -10, 0, 40)
     Frame.BackgroundColor3 = Color3.fromRGB(12, 16, 26)
     Frame.Parent = parentPage
 
@@ -558,8 +577,9 @@ local function AddInputBox(parentPage, name, placeholder, callback)
     Label.Text = name
     Label.TextColor3 = Color3.fromRGB(220, 220, 220)
     Label.Font = Enum.Font.GothamMedium
-    Label.TextSize = 11
+    Label.TextSize = 10
     Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextWrapped = true
     Label.BackgroundTransparency = 1
     Label.Parent = Frame
 
@@ -610,10 +630,14 @@ AddButton(PlayerPage, "Set Speed Max (2000)", function() Config.WalkSpeed = 2000
 AddButton(PlayerPage, "Reset Speed (16)", function() Config.WalkSpeed = 16 Config.WalkSpeedBypass = false end)
 
 -- แท็บ 2: EGGS
-AddToggle(EggPage, "Auto Steal Egg (ขโมยไข่อัตโนมัติ)", "AutoStealEgg")
-AddToggle(EggPage, "Instant Collect Egg (กดเก็บไข่ทันที ไม่ต้องกดค้าง)", "InstantCollectEgg")
-AddToggle(EggPage, "Auto Return Base On Hold (ถือไข่ในมือแล้วกลับฐาน)", "AutoReturnBase")
-AddToggle(EggPage, "Keep Eggs (เก็บไข่ไว้ไม่ขาย)", "KeepEggs")
+AddToggle(EggPage, "Auto Steal Egg (เดินขโมยไข่ความเร็วสูง)", "AutoStealEgg")
+AddToggle(EggPage, "Instant Collect Egg (กดเก็บไข่ทีเดียว/ไว ไม่ต้องกดค้าง)", "InstantCollectEgg")
+AddToggle(EggPage, "Auto Return Base On Hand Hold (ถือไข่ในมือเท่านั้นแล้วกลับฐาน)", "AutoReturnBase")
+
+AddInputBox(EggPage, "Custom Steal Walk Speed:", "Ex. 120", function(text)
+    local num = tonumber(text)
+    if num then Config.StealSpeed = num end
+end)
 
 AddButton(EggPage, "Set Current Position As Base", function()
     UpdateBasePosition()
@@ -660,7 +684,7 @@ ToggleGuiBtn.Name = "ToggleCraftHub"
 ToggleGuiBtn.Size = UDim2.new(0, 42, 0, 42)
 ToggleGuiBtn.Position = UDim2.new(0, 15, 0.18, 0)
 ToggleGuiBtn.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
-ToggleGuiBtn.Image = "rbxassetid://6031068421" -- Vector Shield Asset
+ToggleGuiBtn.Image = "rbxassetid://6031068421"
 ToggleGuiBtn.ImageColor3 = Color3.fromRGB(0, 150, 255)
 ToggleGuiBtn.Active = true
 ToggleGuiBtn.Draggable = true
@@ -679,4 +703,4 @@ ToggleGuiBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
-print("[THE CRAFT HUB] Complete Vector UI Edition Loaded Successfully!")
+print("[THE CRAFT HUB] High-Speed Walk & Text Wrap Fixed Successfully!")
