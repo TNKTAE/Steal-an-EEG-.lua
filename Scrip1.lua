@@ -1,9 +1,7 @@
 -- ==============================================
--- 🔷 THE CRAFT HUB | แก้ไขแล้ว — รันแล้วขึ้นทันที
--- ภาษาไทย | เปิด-ปิดได้ | ธีมสีน้ำเงิน
+-- 🔷 THE CRAFT HUB | แก้ไข UI ไม่ขึ้น (FIXED)
 -- ==============================================
 
--- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
@@ -11,8 +9,9 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
-local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
 
 -- ==============================================
 -- ⚙️ การตั้งค่า
@@ -52,21 +51,9 @@ local MenuOpen = true
 -- ==============================================
 -- 🛠️ ฟังก์ชันพื้นฐาน
 -- ==============================================
-local function SafeWaitFor(instance, property, timeout)
-    timeout = timeout or 5
-    local start = os.clock()
-    while not instance[property] and os.clock() - start < timeout do
-        task.wait()
-    end
-    return instance[property]
-end
-
 local function GetHRP()
-    local char = LocalPlayer.Character
-    if not char then
-        char = LocalPlayer.CharacterAdded:Wait()
-    end
-    return char:FindFirstChild("HumanoidRootPart")
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart", 5)
 end
 
 local function Distance(pos1, pos2)
@@ -136,20 +123,20 @@ local function StealEgg(egg)
 end
 
 -- ==============================================
--- 🛡️ ป้องกัน AFK
+-- 🛡️ ป้องกัน AFK & ESP
 -- ==============================================
 local function AntiAFK()
     while isRunning and Settings.ป้องกันAFK do
         task.wait(30)
         pcall(function()
-            LocalPlayer.PlayerGui:SetAttribute("AntiAFK", os.time())
+            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if playerGui then
+                playerGui:SetAttribute("AntiAFK", os.time())
+            end
         end)
     end
 end
 
--- ==============================================
--- 👁️ ESP
--- ==============================================
 local function ESP()
     while isRunning do
         task.wait(0.5)
@@ -173,144 +160,169 @@ local function ESP()
 end
 
 -- ==============================================
--- 🎨 สร้าง UI — แก้ไขจุดที่ไม่ขึ้น!
+-- 🎨 สร้าง UI (แก้ไขส่วนการใส่ Parent & Display)
 -- ==============================================
 local function CreateUI()
-    -- ✅ ใช้ตำแหน่งที่แน่นอน ไม่ซ่อน
+    -- ลบ UI เก่าทิ้งก่อนถ้าเคยรันค้างไว้
+    local oldUI = game:GetService("CoreGui"):FindFirstChild("THE_CRAFT_HUB") or LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("THE_CRAFT_HUB")
+    if oldUI then oldUI:Destroy() end
+
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "THE_CRAFT_HUB"
     ScreenGui.ResetOnSpawn = false
+    ScreenGui.DisplayOrder = 999
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- ✅ เลือก Parent ที่ถูกต้อง
-    local success, err = pcall(function()
-        ScreenGui.Parent = game:GetService("CoreGui")
-    end)
-    if not success then
-        ScreenGui.Parent = LocalPlayer:FindFirstChild("PlayerGui")
+    -- ตรวจสอบ Parent ที่ปลอดภัยที่สุด
+    local parentTarget
+    if gethui then
+        parentTarget = gethui()
+    elseif syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+        parentTarget = game:GetService("CoreGui")
+    elseif pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end) then
+        parentTarget = game:GetService("CoreGui")
+    else
+        parentTarget = LocalPlayer:WaitForChild("PlayerGui")
     end
-    
-    -- ✅ ปุ่มเปิด-ปิด — ชัดเจนที่สุด มุมซ้ายบน
+    ScreenGui.Parent = parentTarget
+
+    -- ปุ่มเปิด-ปิด (มุมซ้ายบน)
     local ToggleBtn = Instance.new("TextButton")
     ToggleBtn.Name = "ToggleButton"
-    ToggleBtn.Size = UDim2.new(0, 60, 0, 60)
-    ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
+    ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+    ToggleBtn.Position = UDim2.new(0, 20, 0, 50)
     ToggleBtn.BackgroundColor3 = Theme.หลัก
     ToggleBtn.Text = "🔷"
     ToggleBtn.TextColor3 = Color3.new(1,1,1)
-    ToggleBtn.TextSize = 28
+    ToggleBtn.TextSize = 24
     ToggleBtn.Font = Enum.Font.GothamBold
-    ToggleBtn.AutoLocalize = false
-    ToggleBtn.ZIndex = 100
+    ToggleBtn.ZIndex = 10
     ToggleBtn.Parent = ScreenGui
-    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 14)
-    Instance.new("UIStroke", ToggleBtn).Color = Theme.ขอบ
     
-    -- ✅ เมนูหลัก — ตั้งค่าให้แสดงทันที
+    local btnCorner = Instance.new("UICorner", ToggleBtn)
+    btnCorner.CornerRadius = UDim.new(0, 12)
+    local btnStroke = Instance.new("UIStroke", ToggleBtn)
+    btnStroke.Color = Theme.ขอบ
+    btnStroke.Thickness = 2
+    
+    -- เมนูหลัก
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainMenu"
-    MainFrame.Size = UDim2.new(0, 340, 0, 520)
-    MainFrame.Position = UDim2.new(0, 90, 0, 15)
+    MainFrame.Size = UDim2.new(0, 320, 0, 480)
+    MainFrame.Position = UDim2.new(0, 80, 0, 50)
     MainFrame.BackgroundColor3 = Theme.พื้นหลัง
     MainFrame.Active = true
     MainFrame.Draggable = true
     MainFrame.Visible = true
+    MainFrame.ZIndex = 5
     MainFrame.Parent = ScreenGui
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
-    Instance.new("UIStroke", MainFrame).Color = Theme.ขอบ
+    
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
+    local frameStroke = Instance.new("UIStroke", MainFrame)
+    frameStroke.Color = Theme.ขอบ
+    frameStroke.Thickness = 1.5
     
     -- แถบหัว
     local Header = Instance.new("Frame")
-    Header.Size = UDim2.new(1, 0, 0, 60)
+    Header.Size = UDim2.new(1, 0, 0, 55)
     Header.BackgroundColor3 = Theme.แถบหัว
+    Header.ZIndex = 6
     Header.Parent = MainFrame
-    Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 16)
+    Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 14)
     
     local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -20, 1, 0)
-    Title.Position = UDim2.new(0, 15, 0, 0)
+    Title.Size = UDim2.new(1, -20, 0, 25)
+    Title.Position = UDim2.new(0, 15, 0, 8)
     Title.BackgroundTransparency = 1
     Title.Text = "🔷 THE CRAFT HUB"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 20
+    Title.TextSize = 18
     Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.ZIndex = 7
     Title.Parent = Header
     
     local SubTitle = Instance.new("TextLabel")
-    SubTitle.Size = UDim2.new(1, -20, 0, 20)
-    SubTitle.Position = UDim2.new(0, 15, 1, -22)
+    SubTitle.Size = UDim2.new(1, -20, 0, 15)
+    SubTitle.Position = UDim2.new(0, 15, 0, 32)
     SubTitle.BackgroundTransparency = 1
     SubTitle.Text = "Steal an Egg — สคริปต์ครบเครื่อง"
     SubTitle.TextColor3 = Theme.อ่อน
     SubTitle.Font = Enum.Font.Gotham
-    SubTitle.TextSize = 12
+    SubTitle.TextSize = 11
     SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+    SubTitle.ZIndex = 7
     SubTitle.Parent = Header
     
-    -- เนื้อหา
+    -- Scroll Content
     local Content = Instance.new("ScrollingFrame")
-    Content.Size = UDim2.new(1, 0, 1, -95)
-    Content.Position = UDim2.new(0, 0, 0, 70)
+    Content.Size = UDim2.new(1, 0, 1, -85)
+    Content.Position = UDim2.new(0, 0, 0, 60)
     Content.BackgroundTransparency = 1
-    Content.ScrollBarThickness = 5
+    Content.ScrollBarThickness = 4
     Content.ScrollBarColor3 = Theme.หลัก
-    Content.CanvasSize = UDim2.new(0, 0, 0, 550)
+    Content.CanvasSize = UDim2.new(0, 0, 0, 0)
     Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Content.ZIndex = 6
     Content.Parent = MainFrame
     
     local UIList = Instance.new("UIListLayout")
-    UIList.Padding = UDim.new(0, 12)
+    UIList.Padding = UDim.new(0, 8)
     UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
     UIList.VerticalAlignment = Enum.VerticalAlignment.Top
-    UIList.PaddingTop = UDim.new(0, 15)
     UIList.Parent = Content
     
-    -- ==============================================
-    -- 🔘 ปุ่มเปิด-ปิด
-    -- ==============================================
+    local UIPadding = Instance.new("UIPadding", Content)
+    UIPadding.PaddingTop = UDim.new(0, 5)
+    UIPadding.PaddingBottom = UDim.new(0, 10)
+    
+    -- สวิตช์เปิดปิด
     local function CreateToggle(ชื่อ, คีย์)
         local Container = Instance.new("Frame")
-        Container.Size = UDim2.new(0, 310, 0, 50)
+        Container.Size = UDim2.new(0, 290, 0, 42)
         Container.BackgroundColor3 = Theme.แถบหัว
+        Container.ZIndex = 7
         Container.Parent = Content
-        Instance.new("UICorner", Container).CornerRadius = UDim.new(0, 10)
+        Instance.new("UICorner", Container).CornerRadius = UDim.new(0, 8)
         
         local Label = Instance.new("TextLabel")
-        Label.Size = UDim2.new(0.75, 0, 1, 0)
-        Label.Position = UDim2.new(0, 15, 0, 0)
+        Label.Size = UDim2.new(0.7, 0, 1, 0)
+        Label.Position = UDim2.new(0, 12, 0, 0)
         Label.BackgroundTransparency = 1
         Label.Text = ชื่อ
         Label.TextColor3 = Theme.ข้อความ
         Label.Font = Enum.Font.Gotham
-        Label.TextSize = 14
+        Label.TextSize = 13
         Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.ZIndex = 8
         Label.Parent = Container
         
         local Toggle = Instance.new("TextButton")
-        Toggle.Size = UDim2.new(0, 55, 0, 28)
-        Toggle.Position = UDim2.new(1, -65, 0.5, -14)
+        Toggle.Size = UDim2.new(0, 48, 0, 24)
+        Toggle.Position = UDim2.new(1, -58, 0.5, -12)
         Toggle.BackgroundColor3 = Settings[คีย์] and Theme.หลัก or Theme.ปิดการใช้งาน
         Toggle.Text = ""
-        Toggle.AutoLocalize = false
+        Toggle.ZIndex = 8
         Toggle.Parent = Container
-        Instance.new("UICorner", Toggle).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", Toggle).CornerRadius = UDim.new(0, 6)
         
         local Knob = Instance.new("Frame")
-        Knob.Size = UDim2.new(0, 22, 0, 22)
-        Knob.Position = Settings[คีย์] and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
+        Knob.Size = UDim2.new(0, 18, 0, 18)
+        Knob.Position = Settings[คีย์] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
         Knob.BackgroundColor3 = Color3.new(1,1,1)
+        Knob.ZIndex = 9
         Knob.Parent = Toggle
         Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
         
         Toggle.MouseButton1Click:Connect(function()
             Settings[คีย์] = not Settings[คีย์]
             Toggle.BackgroundColor3 = Settings[คีย์] and Theme.หลัก or Theme.ปิดการใช้งาน
-            Knob.Position = Settings[คีย์] and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
+            Knob.Position = Settings[คีย์] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
         end)
     end
     
-    -- สร้างปุ่มทั้งหมด
+    -- ปุ่มทั้งหมด
     CreateToggle("🥚 ขโมยไข่อัตโนมัติ", "ขโมยไข่อัตโนมัติ")
     CreateToggle("📦 ขโมยเฉพาะไข่ขนาดใหญ่", "ขโมยเฉพาะไข่ใหญ่")
     CreateToggle("👁️ แสดงตำแหน่งไข่ (ESP)", "แสดงตำแหน่งไข่")
@@ -322,24 +334,23 @@ local function CreateUI()
     CreateToggle("🛡️ ป้องกันการหลุด AFK", "ป้องกันAFK")
     CreateToggle("🌐 เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ", "เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ")
     
-    -- สถานะ
+    -- แถบสถานะ
     local Status = Instance.new("TextLabel")
-    Status.Size = UDim2.new(1, -20, 0, 25)
-    Status.Position = UDim2.new(0, 10, 1, -28)
+    Status.Size = UDim2.new(1, -20, 0, 20)
+    Status.Position = UDim2.new(0, 10, 1, -22)
     Status.BackgroundTransparency = 1
     Status.Text = "✅ พร้อมใช้งาน | กด 🔷 เพื่อเปิด-ปิดเมนู"
     Status.TextColor3 = Theme.อ่อน
     Status.Font = Enum.Font.Gotham
-    Status.TextSize = 11
+    Status.TextSize = 10
+    Status.ZIndex = 6
     Status.Parent = MainFrame
     
-    -- ==============================================
-    -- 🔄 เปิด-ปิดเมนู
-    -- ==============================================
+    -- Event ปุ่มซ่อน/แสดง
     ToggleBtn.MouseButton1Click:Connect(function()
         MenuOpen = not MenuOpen
         MainFrame.Visible = MenuOpen
-        ToggleBtn.BackgroundColor3 = MenuOpen and Theme.เข้ม or Theme.หลัก
+        ToggleBtn.BackgroundColor3 = MenuOpen and Theme.หลัก or Theme.ปิดการใช้งาน
     end)
     
     return ScreenGui
@@ -349,23 +360,19 @@ end
 -- 🚀 เริ่มทำงาน
 -- ==============================================
 task.spawn(function()
-    -- สร้าง UI ก่อนเลย
     CreateUI()
     
-    -- แจ้งเตือน
     pcall(function()
         StarterGui:SetCore("SendNotification", {
             Title = "🔷 THE CRAFT HUB",
-            Text = "โหลดเสร็จ! มุมซ้ายบนกด 🔷 เปิดเมนู",
-            Duration = 4
+            Text = "โหลดเรียบร้อย! กดปุ่ม 🔷 มุมซ้ายบน",
+            Duration = 5
         })
     end)
     
-    -- ระบบทำงาน
     task.spawn(AntiAFK)
     task.spawn(ESP)
     
-    -- ลูปหลัก
     while task.wait(0.15) do
         if not Settings.ขโมยไข่อัตโนมัติ then continue end
         local eggs = FindAllEggs()
@@ -374,5 +381,3 @@ task.spawn(function()
         end
     end
 end)
-
-print("🔷 THE CRAFT HUB — โหลดเสร็จสิ้น! มุมซ้ายบนมีปุ่ม 🔷")
