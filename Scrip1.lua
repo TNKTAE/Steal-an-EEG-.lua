@@ -1,5 +1,5 @@
 -- ==========================================
--- THE CRAFT HUB - Ultimate Advanced Edition
+-- THE CRAFT HUB - Auto Return Base & Event Edition
 -- Theme: Dark Navy Blue & Pure Black
 -- Language: Lua
 -- ==========================================
@@ -19,29 +19,34 @@ local LocalPlayer = Players.LocalPlayer
 -- 1. CONFIG & SYSTEM VARIABLES
 -- ==========================================
 local Config = {
-    -- Player & Combat
+    -- Player & Movement
     WalkSpeed = 16,
     WalkSpeedBypass = false,
     FastAttack = false,
-    AutoEquipEgg = false, -- ใส่ไข่อัตโนมัติเมื่อไข่ตกใส่มือ
+    AutoEquipEgg = true,
+    AutoReturnBase = true, -- วาร์ปกลับฐานอัตโนมัติเมื่อถือไข่
     AntiAFK = false,
 
-    -- Eggs System
+    -- Eggs & Stealing
     AutoStealEgg = false,
+    FastEggCollect = false, -- กดเก็บไข่ไวทันที
     StealAllInRange = false,
-    KeepEggs = false, -- เก็บไข่ไว้
+    KeepEggs = false,
     
-    -- Egg Filters
-    FilterNameEnabled = false,
-    TargetEggName = "", -- คัดกรองชื่อไข่
-    FilterSizeEnabled = false,
-    TargetEggSize = "Large", -- Small, Medium, Large, Giant, Huge
-    FilterZoneEnabled = false,
-    TargetZone = "", -- คัดกรองโซน
+    -- Event & Farming
+    AutoBlueTreeEvent = false, -- ตีต้นไม้ฟ้าอัตโนมัติ
 
-    -- Visual & ESP
+    -- Filters
+    FilterNameEnabled = false,
+    TargetEggName = "",
+    FilterSizeEnabled = false,
+    TargetEggSize = "Large",
+    FilterZoneEnabled = false,
+    TargetZone = "",
+
+    -- Visuals (ESP)
     ESP_Eggs = false,
-    ESP_Cards = false,
+    ESP_Players = false, -- เปลี่ยนเป็นมองผู้เล่น
 
     -- Automation
     AutoSellEggs = false,
@@ -50,7 +55,19 @@ local Config = {
     WebhookURL = ""
 }
 
-local ESP_Storage = { Egg = {}, Card = {} }
+local ESP_Storage = { Egg = {}, Player = {} }
+local BasePosition = nil
+
+-- บันทึกจุดเกิด/ฐานเริ่มต้นของผู้เล่น
+local function UpdateBasePosition()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    if hrp then
+        BasePosition = hrp.CFrame
+    end
+end
+UpdateBasePosition()
+LocalPlayer.CharacterAdded:Connect(UpdateBasePosition)
 
 -- ==========================================
 -- 2. CORE REAL-WORKING FUNCTIONS
@@ -98,29 +115,49 @@ task.spawn(function()
     end
 end)
 
--- 🤲 ระบบใส่ไข่อัตโนมัติเมื่อไข่ตกใส่มือ / เข้ากระเป๋า (Auto Equip Egg)
+-- 🤲 ระบบสวมใส่ไข่อัตโนมัติ + วาร์ปกลับฐานเมื่อถือไข่ (Auto Equip & Return Base)
 task.spawn(function()
     while true do
-        task.wait(0.2)
-        if Config.AutoEquipEgg then
-            pcall(function()
-                local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-                if backpack then
-                    for _, item in pairs(backpack:GetChildren()) do
-                        if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
-                            item.Parent = LocalPlayer.Character -- สวมใส่ถือทันที
-                        end
+        task.wait(0.15)
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+
+            local hasEggInHand = false
+
+            -- 1. ตรวจสอบไข่ในกระเป๋าแล้วสวมใส่เข้ามืออัตโนมัติ
+            if backpack then
+                for _, item in pairs(backpack:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
+                        item.Parent = char -- ย้ายใส่เข้ามือทันที
+                        hasEggInHand = true
                     end
                 end
-            end)
-        end
+            end
+
+            -- 2. ตรวจสอบว่าในมือถือไข่อยู่หรือไม่
+            if char then
+                for _, item in pairs(char:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
+                        hasEggInHand = true
+                    end
+                end
+            end
+
+            -- 3. ถือไข่แล้ว -> วาร์ปกลับฐานอัตโนมัติ
+            if (hasEggInHand or Config.AutoReturnBase) and hasEggInHand and hrp and BasePosition then
+                hrp.CFrame = BasePosition
+                task.wait(0.5)
+            end
+        end)
     end
 end)
 
--- 🥚 ระบบขโมย / เก็บ / คัดกรองไข่ (ทำงานได้จริง)
+-- 🥚 ระบบขโมยไข่ + กดเก็บไวอัตโนมัติ
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.05)
         if Config.AutoStealEgg then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -137,46 +174,78 @@ task.spawn(function()
                         local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetModelCFrame().Position) or obj.Position
                         local dist = (hrp.Position - pos).Magnitude
 
-                        -- 🔍 คัดกรองโซน (Filter Zone)
-                        if Config.FilterZoneEnabled and Config.TargetZone ~= "" then
-                            if not string.find(string.lower(obj:GetFullName()), string.lower(Config.TargetZone)) then
-                                continue
-                            end
-                        end
+                        -- คัดกรองต่างๆ
+                        if Config.FilterZoneEnabled and Config.TargetZone ~= "" and not string.find(string.lower(obj:GetFullName()), string.lower(Config.TargetZone)) then continue end
+                        if Config.FilterNameEnabled and Config.TargetEggName ~= "" and not string.find(nameLower, string.lower(Config.TargetEggName)) then continue end
+                        if Config.FilterSizeEnabled and not string.find(nameLower, string.lower(Config.TargetEggSize)) then continue end
+                        if Config.StealAllInRange and dist > Config.StealRadius then continue end
 
-                        -- 🔍 คัดกรองชื่อไข่ (Filter Name)
-                        if Config.FilterNameEnabled and Config.TargetEggName ~= "" then
-                            if not string.find(nameLower, string.lower(Config.TargetEggName)) then
-                                continue
-                            end
-                        end
+                        -- วาร์ปไปหาตำแหน่งไข่เพื่อขโมย
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 0))
 
-                        -- 🔍 คัดกรองขนาดไข่ (Filter Size)
-                        if Config.FilterSizeEnabled then
-                            local sz = string.lower(Config.TargetEggSize)
-                            if not string.find(nameLower, sz) then
-                                continue
-                            end
-                        end
-
-                        -- ตรวจสอบระยะทาง
-                        if Config.StealAllInRange and dist > Config.StealRadius then
-                            continue
-                        end
-
-                        -- 📦 เก็บไข่ไว้ / ขโมยไข่
+                        -- กดเก็บไข่ไว (Bypass ProximityPrompt / Touch)
                         local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChild("Prompt", true)
                         local clicker = obj:FindFirstChildOfClass("ClickDetector")
 
-                        if prompt and fireproximityprompt then
-                            fireproximityprompt(prompt)
+                        if prompt then
+                            if Config.FastEggCollect then
+                                prompt.HoldDuration = 0 -- กดทันทีไม่ต้องค้าง
+                            end
+                            if fireproximityprompt then fireproximityprompt(prompt) end
                         elseif clicker and fireclickdetector then
                             fireclickdetector(clicker)
-                        else
-                            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2.5, 0))
-                            if firetouchinterest and obj:IsA("BasePart") then
-                                firetouchinterest(hrp, obj, 0)
-                                firetouchinterest(hrp, obj, 1)
+                        elseif firetouchinterest and obj:IsA("BasePart") then
+                            firetouchinterest(hrp, obj, 0)
+                            firetouchinterest(hrp, obj, 1)
+                        end
+
+                        task.wait(0.05)
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- 🌲 ฟังก์ชั่นกิจกรรม: ตีต้นไม้ฟ้าอัตโนมัติ (Auto Blue Tree Event)
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Config.AutoBlueTreeEvent then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                -- ถืออาวุธขึ้นมาเตรียมตี
+                local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                if backpack then
+                    local tool = backpack:FindFirstChildOfClass("Tool")
+                    if tool then tool.Parent = char end
+                end
+
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if not Config.AutoBlueTreeEvent then break end
+
+                    local nameLower = string.lower(obj.Name)
+                    local isBlueTree = string.find(nameLower, "bluetree") or string.find(nameLower, "blue tree") or string.find(nameLower, "ต้นไม้ฟ้า") or (string.find(nameLower, "tree") and string.find(nameLower, "blue"))
+
+                    if isBlueTree and (obj:IsA("Model") or obj:IsA("BasePart")) then
+                        local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetModelCFrame().Position) or obj.Position
+                        
+                        -- วาร์ปไปข้างๆ ต้นไม้ฟ้า
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 3))
+
+                        -- สั่งตีอัตโนมัติ
+                        local tool = char:FindFirstChildOfClass("Tool")
+                        if tool then
+                            tool:Activate()
+                            if firetouchinterest and tool:FindFirstChild("Handle") then
+                                local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+                                if targetPart then
+                                    firetouchinterest(tool.Handle, targetPart, 0)
+                                    firetouchinterest(tool.Handle, targetPart, 1)
+                                end
                             end
                         end
                         task.wait(0.05)
@@ -187,7 +256,7 @@ task.spawn(function()
     end
 end)
 
--- 👁️ ระบบมองไข่ (ESP มองเห็นไข่)
+-- 👁️ ระบบมองเห็นไข่ & มองเห็นผู้เล่น (ESP Players)
 function Functions.UpdateESP(targetType, enable)
     if ESP_Storage[targetType] then
         for _, v in pairs(ESP_Storage[targetType]) do
@@ -199,74 +268,71 @@ function Functions.UpdateESP(targetType, enable)
     if not enable then return end
 
     task.spawn(function()
-        for _, obj in pairs(workspace:GetDescendants()) do
-            local nameLower = string.lower(obj.Name)
-            local isTarget = false
+        if targetType == "Player" then
+            -- ESP มองผู้เล่นทุกคน
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local char = plr.Character
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "HUB_ESP_Player"
+                    highlight.FillColor = Color3.fromRGB(255, 50, 50)
+                    highlight.FillTransparency = 0.4
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.Adornee = char
+                    highlight.Parent = CoreGui
 
-            if targetType == "Egg" and string.find(nameLower, "egg") then isTarget = true end
-            if targetType == "Card" and string.find(nameLower, "card") then isTarget = true end
+                    local bb = Instance.new("BillboardGui")
+                    bb.Size = UDim2.new(0, 140, 0, 30)
+                    bb.AlwaysOnTop = true
+                    bb.Adornee = char:FindFirstChild("Head") or char.HumanoidRootPart
+                    bb.Parent = highlight
 
-            if isTarget and (obj:IsA("Model") or obj:IsA("BasePart")) then
-                local highlight = Instance.new("Highlight")
-                highlight.Name = "HUB_ESP_" .. targetType
-                highlight.FillColor = (targetType == "Egg") and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(255, 215, 0)
-                highlight.FillTransparency = 0.3
-                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                highlight.Adornee = obj
-                highlight.Parent = CoreGui
+                    local txt = Instance.new("TextLabel")
+                    txt.Size = UDim2.new(1, 0, 1, 0)
+                    txt.BackgroundTransparency = 1
+                    txt.Text = "👤 " .. plr.DisplayName .. " (@" .. plr.Name .. ")"
+                    txt.TextColor3 = Color3.fromRGB(255, 100, 100)
+                    txt.Font = Enum.Font.GothamBold
+                    txt.TextSize = 10
+                    txt.Parent = bb
 
-                local bb = Instance.new("BillboardGui")
-                bb.Size = UDim2.new(0, 140, 0, 30)
-                bb.AlwaysOnTop = true
-                bb.Adornee = obj
-                bb.Parent = highlight
+                    table.insert(ESP_Storage["Player"], highlight)
+                end
+            end
+        elseif targetType == "Egg" then
+            -- ESP มองไข่
+            for _, obj in pairs(workspace:GetDescendants()) do
+                local nameLower = string.lower(obj.Name)
+                if string.find(nameLower, "egg") and (obj:IsA("Model") or obj:IsA("BasePart")) then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "HUB_ESP_Egg"
+                    highlight.FillColor = Color3.fromRGB(0, 170, 255)
+                    highlight.FillTransparency = 0.3
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.Adornee = obj
+                    highlight.Parent = CoreGui
 
-                local txt = Instance.new("TextLabel")
-                txt.Size = UDim2.new(1, 0, 1, 0)
-                txt.BackgroundTransparency = 1
-                txt.Text = "👁️ [" .. targetType:upper() .. "] " .. obj.Name
-                txt.TextColor3 = highlight.FillColor
-                txt.Font = Enum.Font.GothamBold
-                txt.TextSize = 10
-                txt.Parent = bb
+                    local bb = Instance.new("BillboardGui")
+                    bb.Size = UDim2.new(0, 140, 0, 30)
+                    bb.AlwaysOnTop = true
+                    bb.Adornee = obj
+                    bb.Parent = highlight
 
-                table.insert(ESP_Storage[targetType], highlight)
+                    local txt = Instance.new("TextLabel")
+                    txt.Size = UDim2.new(1, 0, 1, 0)
+                    txt.BackgroundTransparency = 1
+                    txt.Text = "🥚 [EGG] " .. obj.Name
+                    txt.TextColor3 = Color3.fromRGB(0, 170, 255)
+                    txt.Font = Enum.Font.GothamBold
+                    txt.TextSize = 10
+                    txt.Parent = bb
+
+                    table.insert(ESP_Storage["Egg"], highlight)
+                end
             end
         end
     end)
 end
-
--- 💰 ระบบขายไข่อัตโนมัติ (ปิดทำงานหากเปิด 'เก็บไข่ไว้')
-task.spawn(function()
-    while true do
-        task.wait(1.5)
-        if Config.AutoSellEggs and not Config.KeepEggs then
-            pcall(function()
-                for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-                    if v:IsA("RemoteEvent") and string.find(string.lower(v.Name), "sell") then
-                        v:FireServer()
-                    end
-                end
-            end)
-        end
-    end
-end)
-
--- 🧬 ผสานสัตว์เลี้ยง
-task.spawn(function()
-    while true do
-        task.wait(2)
-        if Config.AutoMergePets then
-            pcall(function()
-                for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-                    if v:IsA("RemoteEvent") and (string.find(string.lower(v.Name), "merge") or string.find(string.lower(v.Name), "craft")) then
-                        v:FireServer()
-                    end
-                end
-            end)
-        end
-    end
-end)
 
 -- 🛡️ Anti-AFK
 LocalPlayer.Idled:Connect(function()
@@ -290,8 +356,8 @@ ScreenGui.Parent = CoreGui
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 650, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -325, 0.5, -175)
+MainFrame.Size = UDim2.new(0, 660, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -330, 0.5, -180)
 MainFrame.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -307,7 +373,7 @@ MainStroke.Color = Color3.fromRGB(0, 102, 255)
 MainStroke.Thickness = 1.5
 MainStroke.Parent = MainFrame
 
--- Top Bar Bar & Navigation
+-- Top Bar Bar
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 42)
 TopBar.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
@@ -364,7 +430,7 @@ local Tabs, Pages = {}, {}
 
 local function CreateTab(tabName)
     local TabBtn = Instance.new("TextButton")
-    TabBtn.Size = UDim2.new(0, 95, 0, 28)
+    TabBtn.Size = UDim2.new(0, 96, 0, 28)
     TabBtn.Position = UDim2.new(0, 0, 0, 7)
     TabBtn.BackgroundColor3 = Color3.fromRGB(12, 18, 30)
     TabBtn.Text = tabName
@@ -526,10 +592,10 @@ end
 -- ==========================================
 
 local PlayerPage = CreateTab("👤 ผู้เล่น & ต่อสู้")
-local EggPage = CreateTab("🥚 ระบบไข่")
-local FilterPage = CreateTab("🔍 คัดกรองไข่ & โซน")
-local VisualPage = CreateTab("👁️ มองไข่ / ESP")
-local MiscPage = CreateTab("⚙️ ระบบเพิ่มเติม")
+local EggPage = CreateTab("🥚 ขโมยไข่ & ฐาน")
+local EventPage = CreateTab("🌲 กิจกรรมต้นไม้ฟ้า")
+local VisualPage = CreateTab("👁️ ESP มองเห็น")
+local MiscPage = CreateTab("⚙️ ตั้งค่า & ระบบ")
 
 -- 👤 แท็บ 1: ผู้เล่น & ต่อสู้
 AddToggle(PlayerPage, "⚔️ ระบบตีไวอัตโนมัติ (Fast Attack)", "FastAttack")
@@ -547,35 +613,26 @@ end)
 AddButton(PlayerPage, "🚀 ความเร็วสูงสุด = 2000", function() Config.WalkSpeed = 2000 Config.WalkSpeedBypass = true end)
 AddButton(PlayerPage, "🚶‍♂️ รีเซ็ตความเร็วปกติ (16)", function() Config.WalkSpeed = 16 Config.WalkSpeedBypass = false end)
 
--- 🥚 แท็บ 2: ระบบไข่
+-- 🥚 แท็บ 2: ขโมยไข่ & วาร์ปกลับฐาน
 AddToggle(EggPage, "ขโมยไข่อัตโนมัติ", "AutoStealEgg")
-AddToggle(EggPage, "ขโมยทุกไข่ในระยะ", "StealAllInRange")
+AddToggle(EggPage, "⚡ กดเก็บไข่ไวทันที (Fast Egg Collect)", "FastEggCollect")
+AddToggle(EggPage, "🏠 วาร์ปกลับฐานอัตโนมัติเมื่อถือไข่ (Auto Return Base)", "AutoReturnBase")
 AddToggle(EggPage, "📦 เก็บไข่ไว้ (ไม่ขาย / Keep Eggs)", "KeepEggs")
-AddToggle(EggPage, "ขายไข่อัตโนมัติ", "AutoSellEggs")
-AddToggle(EggPage, "ผสานสัตว์เลี้ยงอัตโนมัติ", "AutoMergePets")
 
--- 🔍 แท็บ 3: ระบบคัดกรอง
-AddToggle(FilterPage, "🔍 เปิดใช้งานระบบคัดกรองชื่อไข่", "FilterNameEnabled")
-AddInputBox(FilterPage, "ชื่อไข่ที่ต้องการ:", "เช่น Dragon, Gold", function(text)
-    Config.TargetEggName = text
+AddButton(EggPage, "📌 บันทึกตำแหน่งฐานปัจจุบัน (Set Base Position)", function()
+    UpdateBasePosition()
+    print("[THE CRAFT HUB] บันทึกตำแหน่งฐานใหม่เรียบร้อย!")
 end)
 
-AddToggle(FilterPage, "📐 เปิดใช้งานระบบคัดกรองขนาดไข่", "FilterSizeEnabled")
-AddInputBox(FilterPage, "ขนาดไข่ (Large/Giant/Huge):", "พิมพ์ขนาด เช่น Huge", function(text)
-    Config.TargetEggSize = text
-end)
+-- 🌲 แท็บ 3: กิจกรรมต้นไม้ฟ้า
+AddToggle(EventPage, "🌲 ตีต้นไม้ฟ้าอัตโนมัติ (Auto Farm Blue Tree)", "AutoBlueTreeEvent")
 
-AddToggle(FilterPage, "🗺️ เปิดใช้งานระบบคัดกรองโซน", "FilterZoneEnabled")
-AddInputBox(FilterPage, "ชื่อโซน/พื้นที่เฉพาะ:", "พิมพ์ชื่อโซน เช่น Zone1", function(text)
-    Config.TargetZone = text
+-- 👁️ แท็บ 4: ESP มองผู้เล่น & มองไข่
+AddToggle(VisualPage, "👤 มองเห็นตำแหน่งผู้เล่นทุกคน (Player ESP)", "ESP_Players", function(val)
+    Functions.UpdateESP("Player", val)
 end)
-
--- 👁️ แท็บ 4: มองไข่ / ESP
-AddToggle(VisualPage, "👁️ มองเห็นตำแหน่งไข่ทั้งหมด (Egg ESP)", "ESP_Eggs", function(val)
+AddToggle(VisualPage, "🥚 มองเห็นตำแหน่งไข่ทั้งหมด (Egg ESP)", "ESP_Eggs", function(val)
     Functions.UpdateESP("Egg", val)
-end)
-AddToggle(VisualPage, "🎴 มองเห็นตำแหน่งการ์ด (Card ESP)", "ESP_Cards", function(val)
-    Functions.UpdateESP("Card", val)
 end)
 
 -- ⚙️ แท็บ 5: ระบบเพิ่มเติม
@@ -626,4 +683,4 @@ ToggleGuiBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
-print("[THE CRAFT HUB] อัปเดตฟังก์ชั่นผู้เล่น คัดกรองไข่ และโซนเรียบร้อยแล้ว!")
+print("[THE CRAFT HUB] อัปเดตระบบมองผู้เล่น, เก็บไข่เข้ามือแล้วกลับฐาน และกิจกรรมต้นไม้ฟ้าเรียบร้อย!")
