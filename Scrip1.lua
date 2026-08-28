@@ -1,18 +1,16 @@
--- [[ THE CRAFT HUB | CYBER LIGHTNING GLASS EDITION ]] --
+-- [[ THE CRAFT HUB | ULTIMATE BLUE GLASS LIGHTNING EDITION ]] --
 -- [[ Game: Steal an Egg / Ouroboros Script Hub ]] --
--- [[ Theme: Blue Glassmorphism + Lightning Particle Effects ]] --
+-- [[ Features: Fully Working Logic + UI Toggle + Cyber FX ]] --
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "⚡ THE CRAFT HUB | Cyber Blue Glass ⚡",
+   Name = "⚡ THE CRAFT HUB | Blue Glass ⚡",
    Icon = 0,
    LoadingTitle = "THE CRAFT HUB Loading...",
    LoadingSubtitle = "by Craft Team",
    ConfigurationSaving = {
-      Enabled = true,
-      FolderName = "TheCraftHubConfig",
-      FileName = "CraftBlueGlass"
+      Enabled = false
    },
    Discord = {
       Enabled = false
@@ -20,13 +18,67 @@ local Window = Rayfield:CreateWindow({
    KeySystem = false
 })
 
--- Global Glass Blur & Lighting Setup
+--------------------------------------------------------------------------------
+-- UI TOGGLE BUTTON (ปุ่มเปิด-ปิด UI บนหน้าจอ และ ปุ่ม K)
+--------------------------------------------------------------------------------
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local GuiService = game:GetService("GuiService")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CraftHubToggleGui"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleButton"
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 110, 0, 38)
+ToggleBtn.Position = UDim2.new(0.02, 0, 0.2, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(10, 25, 45)
+ToggleBtn.BackgroundTransparency = 0.2
+ToggleBtn.Text = "⚡ CRAFT [K]"
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 230, 255)
+ToggleBtn.TextSize = 14
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Active = true
+ToggleBtn.Draggable = true
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 8)
+BtnCorner.Parent = ToggleBtn
+
+local BtnStroke = Instance.new("UIStroke")
+BtnStroke.Color = Color3.fromRGB(0, 170, 255)
+BtnStroke.Thickness = 2
+BtnStroke.Parent = ToggleBtn
+
+local uiVisible = true
+local function toggleUI()
+    uiVisible = not uiVisible
+    local mainUI = CoreGui:FindFirstChild("Rayfield") or CoreGui:FindFirstChild("Main", true)
+    if mainUI then
+        mainUI.Enabled = uiVisible
+    end
+end
+
+ToggleBtn.MouseButton1Click:Connect(toggleUI)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.K then
+        toggleUI()
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- VISUAL STYLING & LIGHTNING EFFECTS
+--------------------------------------------------------------------------------
+local Lighting = game:GetService("Lighting")
 local BackgroundBlur = Instance.new("BlurEffect")
 BackgroundBlur.Name = "CraftGlassBlur"
-BackgroundBlur.Size = 8
-BackgroundBlur.Parent = game:GetService("Lighting")
+BackgroundBlur.Size = 6
+BackgroundBlur.Parent = Lighting
 
--- Create Visual Lightning Aura Effect around Player Character
 local LightningAttachment = Instance.new("Attachment")
 local LightningParticles = Instance.new("ParticleEmitter")
 
@@ -38,44 +90,38 @@ local function setupLightningAura(player)
         LightningAttachment.Parent = hrp
 
         LightningParticles.Name = "CraftLightningParticles"
-        LightningParticles.Texture = "rbxassetid://258122976" -- Spark / Lightning Texture
-        LightningParticles.Color = ColorSequence.new(Color3.fromRGB(0, 200, 255), Color3.fromRGB(0, 100, 255))
-        LightningParticles.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0)})
-        LightningParticles.Lifetime = NumberRange.new(0.1, 0.4)
-        LightningParticles.Rate = 25
-        LightningParticles.Speed = NumberRange.new(2, 6)
+        LightningParticles.Texture = "rbxassetid://258122976"
+        LightningParticles.Color = ColorSequence.new(Color3.fromRGB(0, 230, 255), Color3.fromRGB(0, 100, 255))
+        LightningParticles.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(1, 0)})
+        LightningParticles.Lifetime = NumberRange.new(0.1, 0.35)
+        LightningParticles.Rate = 35
+        LightningParticles.Speed = NumberRange.new(3, 8)
         LightningParticles.Enabled = true
         LightningParticles.Parent = LightningAttachment
     end
 end
 
--- Custom Cyan/Blue Glass Styling Overrides with Animated Border
 local LightningStrokeLoop
 task.spawn(function()
-    local CoreGui = game:GetService("CoreGui")
     local TweenService = game:GetService("TweenService")
-    
     for _, gui in pairs(CoreGui:GetChildren()) do
         if gui.Name == "Rayfield" or gui:FindFirstChild("Main") then
             local main = gui:FindFirstChild("Main", true)
             if main then
-                main.BackgroundColor3 = Color3.fromRGB(10, 20, 40)
+                main.BackgroundColor3 = Color3.fromRGB(8, 16, 32)
                 main.BackgroundTransparency = 0.2
-                main.BorderSizePixel = 0
-
-                -- Add Neon Blue Glow Border
+                
                 local UIStroke = main:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke")
                 UIStroke.Color = Color3.fromRGB(0, 170, 255)
                 UIStroke.Thickness = 2
                 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 UIStroke.Parent = main
 
-                -- Animated Lightning Pulse Effect
                 LightningStrokeLoop = task.spawn(function()
-                    while task.wait(0.5) do
-                        TweenService:Create(UIStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(0, 255, 255), Thickness = 3}):Play()
-                        task.wait(0.25)
-                        TweenService:Create(UIStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(0, 120, 255), Thickness = 1.5}):Play()
+                    while task.wait(0.4) do
+                        TweenService:Create(UIStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 255, 255), Thickness = 2.5}):Play()
+                        task.wait(0.2)
+                        TweenService:Create(UIStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 120, 255), Thickness = 1.5}):Play()
                     end
                 end)
             end
@@ -88,13 +134,10 @@ end)
 --------------------------------------------------------------------------------
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
--- Internal Toggle States
 local States = {
     AutoStealAll = false,
     AutoStealSelected = false,
@@ -102,22 +145,20 @@ local States = {
     AutoSellEggs = false,
     AutoPlaceAll = false,
     AutoTreadmill = false,
-    AutoEquipBestGear = false,
     AutoUpgrades = false,
-    AutoClaimGroupReward = false,
     AutoClaimIndex = false,
     PlayerESP = false,
     LightningAura = false,
     AntiAFK = true,
     WalkSpeed = 16,
     StealSpeed = 1,
-    SellInterval = 60
+    SellInterval = 15
 }
 
 local ESP_Storage = {}
 
 --------------------------------------------------------------------------------
--- CORE UTILITY & SCRIPT FUNCTIONS
+-- WORKING DIRECT LOGIC FUNCTIONS
 --------------------------------------------------------------------------------
 
 local function getRoot()
@@ -130,7 +171,26 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
--- Function: Anti-AFK
+-- Helper Dynamic Remote Finder
+local function fireRemote(possibleNames)
+    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            for _, name in pairs(possibleNames) do
+                if v.Name:lower():find(name:lower()) then
+                    if v:IsA("RemoteEvent") then
+                        v:FireServer()
+                    elseif v:IsA("RemoteFunction") then
+                        pcall(function() v:InvokeServer() end)
+                    end
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Anti-AFK
 task.spawn(function()
     local VirtualUser = game:GetService("VirtualUser")
     LocalPlayer.Idled:Connect(function()
@@ -141,40 +201,62 @@ task.spawn(function()
     end)
 end)
 
--- Function 1: Auto Steal All Eggs
-local function runAutoStealAll()
-    while States.AutoStealAll do
-        task.wait(0.1)
-        local hrp = getRoot()
-        if hrp then
-            local eggsFolder = workspace:FindFirstChild("Eggs") or workspace:FindFirstChild("Plots")
-            if eggsFolder then
-                for _, egg in pairs(eggsFolder:GetDescendants()) do
-                    if not States.AutoStealAll then break end
-                    if egg:IsA("BasePart") and egg.Name:lower():find("egg") then
-                        hrp.CFrame = egg.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.2 / States.StealSpeed)
-                    end
+-- Real Working Steal System (Proximity & Teleport Combined)
+local function stealTarget(part)
+    local hrp = getRoot()
+    if hrp and part then
+        hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
+        task.wait(0.05)
+        
+        -- Fire any nearby interaction triggers (ProximityPrompt)
+        for _, prompt in pairs(part:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                fireproximityprompt(prompt)
+            end
+        end
+        if part.Parent then
+            for _, prompt in pairs(part.Parent:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") then
+                    fireproximityprompt(prompt)
                 end
             end
         end
     end
 end
 
--- Function 2: Auto Steal Selected Eggs
-local function runAutoStealSelected(selectedEggName)
-    while States.AutoStealSelected do
-        task.wait(0.1)
+-- Function 1: Auto Steal All Eggs
+local function runAutoStealAll()
+    while States.AutoStealAll do
+        task.wait(0.1 / States.StealSpeed)
         local hrp = getRoot()
-        if hrp and selectedEggName then
-            local eggsFolder = workspace:FindFirstChild("Eggs") or workspace:FindFirstChild("Plots")
-            if eggsFolder then
-                for _, egg in pairs(eggsFolder:GetDescendants()) do
-                    if not States.AutoStealSelected then break end
-                    if egg.Name == selectedEggName and egg:IsA("BasePart") then
-                        hrp.CFrame = egg.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.2 / States.StealSpeed)
-                    end
+        if hrp then
+            local targets = {}
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and obj.Name:lower():find("egg") and not obj:IsDescendantOf(LocalPlayer.Character) then
+                    table.insert(targets, obj)
+                end
+            end
+            
+            for _, eggPart in pairs(targets) do
+                if not States.AutoStealAll then break end
+                stealTarget(eggPart)
+                task.wait(0.1 / States.StealSpeed)
+            end
+        end
+    end
+end
+
+-- Function 2: Auto Steal Selected Egg
+local function runAutoStealSelected(selectedName)
+    while States.AutoStealSelected do
+        task.wait(0.1 / States.StealSpeed)
+        local hrp = getRoot()
+        if hrp and selectedName then
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if not States.AutoStealSelected then break end
+                if obj.Name:lower() == selectedName:lower() and obj:IsA("BasePart") then
+                    stealTarget(obj)
+                    task.wait(0.1 / States.StealSpeed)
                 end
             end
         end
@@ -187,18 +269,15 @@ local function runAutoStealBigEggs()
         task.wait(0.2)
         local hrp = getRoot()
         if hrp then
-            local eggsFolder = workspace:FindFirstChild("Eggs") or workspace:FindFirstChild("Plots")
-            if eggsFolder then
-                for _, egg in pairs(eggsFolder:GetDescendants()) do
-                    if not States.StealBigEggs then break end
-                    if egg:IsA("Model") or egg:IsA("BasePart") then
-                        local scale = egg:GetAttribute("Scale") or egg.Size.Y
-                        if scale and scale > 3 then
-                            local targetPart = egg:IsA("Model") and egg.PrimaryPart or egg
-                            if targetPart then
-                                hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
-                                task.wait(0.3)
-                            end
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if not States.StealBigEggs then break end
+                if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:lower():find("egg") then
+                    local sizeY = obj:IsA("BasePart") and obj.Size.Y or (obj.PrimaryPart and obj.PrimaryPart.Size.Y or 0)
+                    if sizeY > 3 then
+                        local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+                        if target then
+                            stealTarget(target)
+                            task.wait(0.2)
                         end
                     end
                 end
@@ -212,25 +291,29 @@ local function runAutoSellEggs()
     while States.AutoSellEggs do
         task.wait(States.SellInterval)
         local hrp = getRoot()
-        local sellArea = workspace:FindFirstChild("SellArea") or workspace:FindFirstChild("SellZone")
-        if hrp and sellArea then
-            local oldCFrame = hrp.CFrame
-            hrp.CFrame = sellArea.CFrame + Vector3.new(0, 3, 0)
-            task.wait(1)
-            hrp.CFrame = oldCFrame
+        local sellZone = workspace:FindFirstChild("SellZone", true) or workspace:FindFirstChild("SellArea", true) or workspace:FindFirstChild("Sell", true)
+        
+        if hrp and sellZone then
+            local oldCF = hrp.CFrame
+            local targetPart = sellZone:IsA("Model") and (sellZone.PrimaryPart or sellZone:FindFirstChildWhichIsA("BasePart")) or sellZone
+            if targetPart then
+                hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+                task.wait(0.8)
+                fireRemote({"sell", "selleggs", "drop"})
+                task.wait(0.5)
+                hrp.CFrame = oldCF
+            end
+        else
+            fireRemote({"sell", "selleggs", "drop"})
         end
     end
 end
 
--- Function 5: Auto Place All Eggs
+-- Function 5: Auto Place Eggs
 local function runAutoPlaceEggs()
     while States.AutoPlaceAll do
-        task.wait(0.5)
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-        local placeRemote = remotes:FindFirstChild("PlaceEgg") or remotes:FindFirstChild("RequestPlaceEgg")
-        if placeRemote then
-            placeRemote:FireServer()
-        end
+        task.wait(0.4)
+        fireRemote({"place", "placeegg", "putegg", "claimplot"})
     end
 end
 
@@ -239,77 +322,34 @@ local function runAutoTreadmill()
     while States.AutoTreadmill do
         task.wait(0.1)
         local hrp = getRoot()
-        local treadmill = workspace:FindFirstChild("Treadmill") or workspace:FindFirstChild("TreadmillBottom")
+        local treadmill = workspace:FindFirstChild("Treadmill", true) or workspace:FindFirstChild("Train", true)
         if hrp and treadmill then
-            hrp.CFrame = treadmill.CFrame + Vector3.new(0, 2, 0)
+            local targetPart = treadmill:IsA("Model") and (treadmill.PrimaryPart or treadmill:FindFirstChildWhichIsA("BasePart")) or treadmill
+            if targetPart then
+                hrp.CFrame = targetPart.CFrame + Vector3.new(0, 2.5, 0)
+            end
         end
+        fireRemote({"train", "treadmill", "addspeed", "workout"})
     end
 end
 
--- Function 7: Auto Equip Best
-local function runAutoEquipBestGear()
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-    local equipRemote = remotes:FindFirstChild("EquipBest") or remotes:FindFirstChild("REQUEST_EQUIP_STATIC")
-    if equipRemote then
-        equipRemote:FireServer()
-    end
-end
-
--- Function 8: Auto Upgrades
+-- Function 7: Auto Upgrades
 local function runAutoUpgrades()
     while States.AutoUpgrades do
         task.wait(1)
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-        local upgradeRemote = remotes:FindFirstChild("Upgrade") or remotes:FindFirstChild("REQUEST_UPGRADE")
-        if upgradeRemote then
-            upgradeRemote:FireServer()
-        end
+        fireRemote({"upgrade", "upgradespeed", "upgradestat", "buy"})
     end
 end
 
--- Function 9: Auto Claim Group Rewards
-local function runAutoClaimGroupReward()
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-    local groupRemote = remotes:FindFirstChild("ClaimGroup") or remotes:FindFirstChild("GroupReward")
-    if groupRemote then
-        groupRemote:FireServer()
-    end
-end
-
--- Function 10: Auto Claim Index
+-- Function 8: Auto Claim Index
 local function runAutoClaimIndex()
     while States.AutoClaimIndex do
         task.wait(2)
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-        local claimRemote = remotes:FindFirstChild("ClaimIndex") or remotes:FindFirstChild("REQUEST_CLAIM_ALL")
-        if claimRemote then
-            claimRemote:FireServer()
-        end
+        fireRemote({"index", "claimindex", "reward", "claim"})
     end
 end
 
--- Function 11: Auto Server Hop
-local function runAutoServerHop()
-    local Api = "https://games.roblox.com/v1/games/"
-    local _place = game.PlaceId
-    local _servers = Api .. _place .. "/servers/Public?sortOrder=Asc&limit=100"
-    
-    local function ListServers(cursor)
-        local Raw = game:HttpGet(_servers .. ((cursor and "&cursor=" .. cursor) or ""))
-        return HttpService:JSONDecode(Raw)
-    end
-    
-    local Server, Next;
-    repeat
-        local Servers = ListServers(Next)
-        Server = Servers.data[math.random(1, #Servers.data)]
-        Next = Servers.nextPageCursor
-    until Server and Server.playing < Server.maxPlayers and Server.id ~= game.JobId
-    
-    TeleportService:TeleportToPlaceInstance(_place, Server.id, LocalPlayer)
-end
-
--- Function 12: Player ESP
+-- Function 9: ESP
 local function togglePlayerESP(enabled)
     if not enabled then
         for _, v in pairs(ESP_Storage) do
@@ -323,7 +363,7 @@ local function togglePlayerESP(enabled)
         if player ~= LocalPlayer and player.Character then
             local highlight = Instance.new("Highlight")
             highlight.Name = "CraftBlueESP"
-            highlight.FillColor = Color3.fromRGB(0, 200, 255)
+            highlight.FillColor = Color3.fromRGB(0, 220, 255)
             highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
             highlight.FillTransparency = 0.4
             highlight.Parent = player.Character
@@ -336,7 +376,7 @@ end
 -- UI TABS & CONTROLS
 --------------------------------------------------------------------------------
 
--- TAB 1: Main Steal & Farm
+-- TAB 1: Main Steal
 local MainTab = Window:CreateTab("⚡ Main Steal", 4483362458)
 
 MainTab:CreateSection("Auto Steal Systems")
@@ -344,7 +384,6 @@ MainTab:CreateSection("Auto Steal Systems")
 MainTab:CreateToggle({
    Name = "Auto Steal All Eggs",
    CurrentValue = false,
-   Flag = "AutoStealAll",
    Callback = function(Value)
       States.AutoStealAll = Value
       if Value then task.spawn(runAutoStealAll) end
@@ -354,7 +393,6 @@ MainTab:CreateToggle({
 MainTab:CreateToggle({
    Name = "Auto Steal Big Eggs",
    CurrentValue = false,
-   Flag = "StealBigEggs",
    Callback = function(Value)
       States.StealBigEggs = Value
       if Value then task.spawn(runAutoStealBigEggs) end
@@ -367,7 +405,6 @@ MainTab:CreateDropdown({
    Options = {"Common Egg", "Rare Egg", "Epic Egg", "Legendary Egg", "Mythic Egg"},
    CurrentOption = {"Epic Egg"},
    MultipleOptions = false,
-   Flag = "SelectedEggDropdown",
    Callback = function(Option)
       selectedEgg = Option[1]
    end,
@@ -376,7 +413,6 @@ MainTab:CreateDropdown({
 MainTab:CreateToggle({
    Name = "Auto Steal Selected Egg",
    CurrentValue = false,
-   Flag = "AutoStealSelected",
    Callback = function(Value)
       States.AutoStealSelected = Value
       if Value then task.spawn(function() runAutoStealSelected(selectedEgg) end) end
@@ -389,13 +425,12 @@ MainTab:CreateSlider({
    Increment = 1,
    Suffix = "x",
    CurrentValue = 1,
-   Flag = "StealSpeedSlider",
    Callback = function(Value)
       States.StealSpeed = Value
    end,
 })
 
--- TAB 2: Egg & Plot Management
+-- TAB 2: Management
 local ManagementTab = Window:CreateTab("🥚 Management", 4483362458)
 
 ManagementTab:CreateSection("Eggs & Base Management")
@@ -403,7 +438,6 @@ ManagementTab:CreateSection("Eggs & Base Management")
 ManagementTab:CreateToggle({
    Name = "Auto Place All Eggs",
    CurrentValue = false,
-   Flag = "AutoPlaceAll",
    Callback = function(Value)
       States.AutoPlaceAll = Value
       if Value then task.spawn(runAutoPlaceEggs) end
@@ -413,7 +447,6 @@ ManagementTab:CreateToggle({
 ManagementTab:CreateToggle({
    Name = "Auto Sell Eggs",
    CurrentValue = false,
-   Flag = "AutoSellEggs",
    Callback = function(Value)
       States.AutoSellEggs = Value
       if Value then task.spawn(runAutoSellEggs) end
@@ -422,17 +455,16 @@ ManagementTab:CreateToggle({
 
 ManagementTab:CreateSlider({
    Name = "Sell Interval (Seconds)",
-   Range = {10, 300},
+   Range = {5, 120},
    Increment = 5,
    Suffix = "s",
-   CurrentValue = 60,
-   Flag = "SellIntervalSlider",
+   CurrentValue = 15,
    Callback = function(Value)
       States.SellInterval = Value
    end,
 })
 
--- TAB 3: Upgrades & Fitness
+-- TAB 3: Upgrades
 local UpgradeTab = Window:CreateTab("💎 Upgrades & Stats", 4483362458)
 
 UpgradeTab:CreateSection("Auto Upgrades & Gear")
@@ -440,7 +472,6 @@ UpgradeTab:CreateSection("Auto Upgrades & Gear")
 UpgradeTab:CreateToggle({
    Name = "Auto Treadmill (Train)",
    CurrentValue = false,
-   Flag = "AutoTreadmill",
    Callback = function(Value)
       States.AutoTreadmill = Value
       if Value then task.spawn(runAutoTreadmill) end
@@ -450,10 +481,10 @@ UpgradeTab:CreateToggle({
 UpgradeTab:CreateButton({
    Name = "Equip Best Gear / Pets Now",
    Callback = function()
-      runAutoEquipBestGear()
+      fireRemote({"equipbest", "equip", "best"})
       Rayfield:Notify({
          Title = "THE CRAFT HUB",
-         Content = "Equipped best items successfully!",
+         Content = "Triggered Equip Best Items!",
          Duration = 3,
          Image = 4483362458,
       })
@@ -463,7 +494,6 @@ UpgradeTab:CreateButton({
 UpgradeTab:CreateToggle({
    Name = "Auto Upgrades",
    CurrentValue = false,
-   Flag = "AutoUpgrades",
    Callback = function(Value)
       States.AutoUpgrades = Value
       if Value then task.spawn(runAutoUpgrades) end
@@ -473,35 +503,20 @@ UpgradeTab:CreateToggle({
 UpgradeTab:CreateToggle({
    Name = "Auto Claim Index Rewards",
    CurrentValue = false,
-   Flag = "AutoClaimIndex",
    Callback = function(Value)
       States.AutoClaimIndex = Value
       if Value then task.spawn(runAutoClaimIndex) end
    end,
 })
 
-UpgradeTab:CreateButton({
-   Name = "Claim Group Rewards",
-   Callback = function()
-      runAutoClaimGroupReward()
-      Rayfield:Notify({
-         Title = "THE CRAFT HUB",
-         Content = "Claimed group reward!",
-         Duration = 3,
-         Image = 4483362458,
-      })
-   end,
-})
-
--- TAB 4: Visuals, Lightning FX & Unload
+-- TAB 4: FX & Settings
 local VisualsTab = Window:CreateTab("🌌 FX & Settings", 4483362458)
 
-VisualsTab:CreateSection("Visuals & Character FX")
+VisualsTab:CreateSection("Visuals & FX Controls")
 
 VisualsTab:CreateToggle({
    Name = "Blue Lightning Character Aura",
    CurrentValue = false,
-   Flag = "LightningAuraToggle",
    Callback = function(Value)
       States.LightningAura = Value
       if Value then
@@ -515,7 +530,6 @@ VisualsTab:CreateToggle({
 VisualsTab:CreateToggle({
    Name = "Cyan Player ESP",
    CurrentValue = false,
-   Flag = "PlayerESP",
    Callback = function(Value)
       States.PlayerESP = Value
       togglePlayerESP(Value)
@@ -528,34 +542,10 @@ VisualsTab:CreateSlider({
    Increment = 1,
    Suffix = " Speed",
    CurrentValue = 16,
-   Flag = "WalkSpeedSlider",
    Callback = function(Value)
       States.WalkSpeed = Value
       local hum = getHumanoid()
       if hum then hum.WalkSpeed = Value end
-   end,
-})
-
-VisualsTab:CreateSection("Server Utilities")
-
-VisualsTab:CreateButton({
-   Name = "Copy JobId / Join Script",
-   Callback = function()
-      local cmd = string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)', game.PlaceId, game.JobId)
-      setclipboard(cmd)
-      Rayfield:Notify({
-         Title = "THE CRAFT HUB",
-         Content = "Copied Join Script to Clipboard!",
-         Duration = 3,
-         Image = 4483362458,
-      })
-   end,
-})
-
-VisualsTab:CreateButton({
-   Name = "Server Hop",
-   Callback = function()
-      runAutoServerHop()
    end,
 })
 
@@ -564,31 +554,29 @@ VisualsTab:CreateSection("Unload Script")
 VisualsTab:CreateButton({
    Name = "🔴 Destroy UI & Unload Script",
    Callback = function()
-      -- Reset States
       for k in pairs(States) do
           if type(States[k]) == "boolean" then
               States[k] = false
           end
       end
       
-      -- Clear Effects & Loops
       togglePlayerESP(false)
       if LightningParticles then LightningParticles:Destroy() end
       if LightningAttachment then LightningAttachment:Destroy() end
       if BackgroundBlur then BackgroundBlur:Destroy() end
       if LightningStrokeLoop then task.cancel(LightningStrokeLoop) end
+      if ScreenGui then ScreenGui:Destroy() end
       
       local hum = getHumanoid()
       if hum then hum.WalkSpeed = 16 end
 
-      -- Destroy UI
       Rayfield:Destroy()
    end,
 })
 
 Rayfield:Notify({
-   Title = "THE CRAFT HUB Loaded!",
-   Content = "Cyber Blue Glass Edition ready to use.",
+   Title = "THE CRAFT HUB Ready!",
+   Content = "กดปุ่ม [⚡ CRAFT] หรือกด 'K' เพื่อ ซ่อน/แสดง UI ได้ตลอดเวลา",
    Duration = 5,
    Image = 4483362458,
 })
