@@ -1,44 +1,83 @@
--- [[ EXCLUSIVE DARK BLUE GLASSMORPHISM HUB ]] --
+-- [[ THE CRAFT HUB | CYBER LIGHTNING GLASS EDITION ]] --
 -- [[ Game: Steal an Egg / Ouroboros Script Hub ]] --
--- [[ Visual Style: Translucent Cyan/Blue Glassmorphism UI ]] --
+-- [[ Theme: Blue Glassmorphism + Lightning Particle Effects ]] --
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "💙 Ouroboros Hub | Dark Blue Glass Edition",
+   Name = "⚡ THE CRAFT HUB | Cyber Blue Glass ⚡",
    Icon = 0,
-   LoadingTitle = "Glassmorphism Blue Hub",
-   LoadingSubtitle = "by Ouroboros Team",
+   LoadingTitle = "THE CRAFT HUB Loading...",
+   LoadingSubtitle = "by Craft Team",
    ConfigurationSaving = {
       Enabled = true,
-      FolderName = "OuroborosGlassConfig",
-      FileName = "BlueGlassConfig"
+      FolderName = "TheCraftHubConfig",
+      FileName = "CraftBlueGlass"
    },
    Discord = {
-      Enabled = true,
-      Invite = "keyless",
-      RememberJoins = true
+      Enabled = false
    },
    KeySystem = false
 })
 
--- Global Glass Blur Reference
+-- Global Glass Blur & Lighting Setup
 local BackgroundBlur = Instance.new("BlurEffect")
-BackgroundBlur.Name = "BlueGlassBlur"
+BackgroundBlur.Name = "CraftGlassBlur"
 BackgroundBlur.Size = 8
 BackgroundBlur.Parent = game:GetService("Lighting")
 
--- Custom Dark Blue Glass Styling Overrides
+-- Create Visual Lightning Aura Effect around Player Character
+local LightningAttachment = Instance.new("Attachment")
+local LightningParticles = Instance.new("ParticleEmitter")
+
+local function setupLightningAura(player)
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    if hrp then
+        LightningAttachment.Name = "CraftLightningAttachment"
+        LightningAttachment.Parent = hrp
+
+        LightningParticles.Name = "CraftLightningParticles"
+        LightningParticles.Texture = "rbxassetid://258122976" -- Spark / Lightning Texture
+        LightningParticles.Color = ColorSequence.new(Color3.fromRGB(0, 200, 255), Color3.fromRGB(0, 100, 255))
+        LightningParticles.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0)})
+        LightningParticles.Lifetime = NumberRange.new(0.1, 0.4)
+        LightningParticles.Rate = 25
+        LightningParticles.Speed = NumberRange.new(2, 6)
+        LightningParticles.Enabled = true
+        LightningParticles.Parent = LightningAttachment
+    end
+end
+
+-- Custom Cyan/Blue Glass Styling Overrides with Animated Border
+local LightningStrokeLoop
 task.spawn(function()
     local CoreGui = game:GetService("CoreGui")
+    local TweenService = game:GetService("TweenService")
+    
     for _, gui in pairs(CoreGui:GetChildren()) do
         if gui.Name == "Rayfield" or gui:FindFirstChild("Main") then
             local main = gui:FindFirstChild("Main", true)
             if main then
-                main.BackgroundColor3 = Color3.fromRGB(15, 25, 45)
-                main.BackgroundTransparency = 0.25
-                main.BorderSizePixel = 1
-                main.BorderColor3 = Color3.fromRGB(0, 170, 255)
+                main.BackgroundColor3 = Color3.fromRGB(10, 20, 40)
+                main.BackgroundTransparency = 0.2
+                main.BorderSizePixel = 0
+
+                -- Add Neon Blue Glow Border
+                local UIStroke = main:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke")
+                UIStroke.Color = Color3.fromRGB(0, 170, 255)
+                UIStroke.Thickness = 2
+                UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                UIStroke.Parent = main
+
+                -- Animated Lightning Pulse Effect
+                LightningStrokeLoop = task.spawn(function()
+                    while task.wait(0.5) do
+                        TweenService:Create(UIStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(0, 255, 255), Thickness = 3}):Play()
+                        task.wait(0.25)
+                        TweenService:Create(UIStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(0, 120, 255), Thickness = 1.5}):Play()
+                    end
+                end)
             end
         end
     end
@@ -55,11 +94,10 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
--- Internal Toggle States (All Extracted States)
+-- Internal Toggle States
 local States = {
     AutoStealAll = false,
     AutoStealSelected = false,
-    AutoStealEgg = false,
     StealBigEggs = false,
     AutoSellEggs = false,
     AutoPlaceAll = false,
@@ -68,11 +106,8 @@ local States = {
     AutoUpgrades = false,
     AutoClaimGroupReward = false,
     AutoClaimIndex = false,
-    AutoServerHop = false,
-    AutoDeleteOwnPets = false,
     PlayerESP = false,
-    WorldEggESP = false,
-    EspCarriedEggs = false,
+    LightningAura = false,
     AntiAFK = true,
     WalkSpeed = 16,
     StealSpeed = 1,
@@ -82,25 +117,17 @@ local States = {
 local ESP_Storage = {}
 
 --------------------------------------------------------------------------------
--- CORE UTILITY & SCRIPT FUNCTIONS (All Original Functions)
+-- CORE UTILITY & SCRIPT FUNCTIONS
 --------------------------------------------------------------------------------
 
--- Helper: Get Local Character HumanoidRootPart
 local function getRoot()
     local char = LocalPlayer.Character
-    if char then
-        return char:FindFirstChild("HumanoidRootPart")
-    end
-    return nil
+    return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- Helper: Get Local Humanoid
 local function getHumanoid()
     local char = LocalPlayer.Character
-    if char then
-        return char:FindFirstChildOfClass("Humanoid")
-    end
-    return nil
+    return char and char:FindFirstChildOfClass("Humanoid")
 end
 
 -- Function: Anti-AFK
@@ -207,7 +234,7 @@ local function runAutoPlaceEggs()
     end
 end
 
--- Function 6: Auto Treadmill (Train Speed/Stats)
+-- Function 6: Auto Treadmill
 local function runAutoTreadmill()
     while States.AutoTreadmill do
         task.wait(0.1)
@@ -219,7 +246,7 @@ local function runAutoTreadmill()
     end
 end
 
--- Function 7: Auto Equip Best Gear / Pets
+-- Function 7: Auto Equip Best
 local function runAutoEquipBestGear()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
     local equipRemote = remotes:FindFirstChild("EquipBest") or remotes:FindFirstChild("REQUEST_EQUIP_STATIC")
@@ -295,10 +322,10 @@ local function togglePlayerESP(enabled)
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local highlight = Instance.new("Highlight")
-            highlight.Name = "BlueGlassESP"
-            highlight.FillColor = Color3.fromRGB(0, 170, 255)
+            highlight.Name = "CraftBlueESP"
+            highlight.FillColor = Color3.fromRGB(0, 200, 255)
             highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-            highlight.FillTransparency = 0.5
+            highlight.FillTransparency = 0.4
             highlight.Parent = player.Character
             table.insert(ESP_Storage, highlight)
         end
@@ -310,9 +337,9 @@ end
 --------------------------------------------------------------------------------
 
 -- TAB 1: Main Steal & Farm
-local MainTab = Window:CreateTab("🌀 Main Steal", 4483362458)
+local MainTab = Window:CreateTab("⚡ Main Steal", 4483362458)
 
-MainTab:CreateSection("Auto Steal Options")
+MainTab:CreateSection("Auto Steal Systems")
 
 MainTab:CreateToggle({
    Name = "Auto Steal All Eggs",
@@ -371,7 +398,7 @@ MainTab:CreateSlider({
 -- TAB 2: Egg & Plot Management
 local ManagementTab = Window:CreateTab("🥚 Management", 4483362458)
 
-ManagementTab:CreateSection("Eggs & Placement")
+ManagementTab:CreateSection("Eggs & Base Management")
 
 ManagementTab:CreateToggle({
    Name = "Auto Place All Eggs",
@@ -406,9 +433,9 @@ ManagementTab:CreateSlider({
 })
 
 -- TAB 3: Upgrades & Fitness
-local UpgradeTab = Window:CreateTab("⚡ Upgrades & Stats", 4483362458)
+local UpgradeTab = Window:CreateTab("💎 Upgrades & Stats", 4483362458)
 
-UpgradeTab:CreateSection("Automation & Training")
+UpgradeTab:CreateSection("Auto Upgrades & Gear")
 
 UpgradeTab:CreateToggle({
    Name = "Auto Treadmill (Train)",
@@ -425,8 +452,8 @@ UpgradeTab:CreateButton({
    Callback = function()
       runAutoEquipBestGear()
       Rayfield:Notify({
-         Title = "Equip Best",
-         Content = "Equipped best gear successfully!",
+         Title = "THE CRAFT HUB",
+         Content = "Equipped best items successfully!",
          Duration = 3,
          Image = 4483362458,
       })
@@ -444,7 +471,7 @@ UpgradeTab:CreateToggle({
 })
 
 UpgradeTab:CreateToggle({
-   Name = "Auto Claim Index",
+   Name = "Auto Claim Index Rewards",
    CurrentValue = false,
    Flag = "AutoClaimIndex",
    Callback = function(Value)
@@ -458,21 +485,35 @@ UpgradeTab:CreateButton({
    Callback = function()
       runAutoClaimGroupReward()
       Rayfield:Notify({
-         Title = "Group Claim",
-         Content = "Attempted to claim group reward!",
+         Title = "THE CRAFT HUB",
+         Content = "Claimed group reward!",
          Duration = 3,
          Image = 4483362458,
       })
    end,
 })
 
--- TAB 4: Visuals, Server & Unload Script
-local VisualsTab = Window:CreateTab("👁 Visuals & Settings", 4483362458)
+-- TAB 4: Visuals, Lightning FX & Unload
+local VisualsTab = Window:CreateTab("🌌 FX & Settings", 4483362458)
 
-VisualsTab:CreateSection("ESP & Movement")
+VisualsTab:CreateSection("Visuals & Character FX")
 
 VisualsTab:CreateToggle({
-   Name = "Player Blue Glass ESP",
+   Name = "Blue Lightning Character Aura",
+   CurrentValue = false,
+   Flag = "LightningAuraToggle",
+   Callback = function(Value)
+      States.LightningAura = Value
+      if Value then
+         setupLightningAura(LocalPlayer)
+      else
+         LightningParticles.Enabled = false
+      end
+   end,
+})
+
+VisualsTab:CreateToggle({
+   Name = "Cyan Player ESP",
    CurrentValue = false,
    Flag = "PlayerESP",
    Callback = function(Value)
@@ -503,7 +544,7 @@ VisualsTab:CreateButton({
       local cmd = string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)', game.PlaceId, game.JobId)
       setclipboard(cmd)
       Rayfield:Notify({
-         Title = "Clipboard",
+         Title = "THE CRAFT HUB",
          Content = "Copied Join Script to Clipboard!",
          Duration = 3,
          Image = 4483362458,
@@ -518,33 +559,36 @@ VisualsTab:CreateButton({
    end,
 })
 
-VisualsTab:CreateSection("Unload Script (ปิด UI ทั้งหมด)")
+VisualsTab:CreateSection("Unload Script")
 
 VisualsTab:CreateButton({
-   Name = "🔴 Destroy UI & Unload Script (ลบ UI ถาวร)",
+   Name = "🔴 Destroy UI & Unload Script",
    Callback = function()
-      -- 1. หยุดลูปและปิดการทำงานของท็อกเกิลทั้งหมด
+      -- Reset States
       for k in pairs(States) do
           if type(States[k]) == "boolean" then
               States[k] = false
           end
       end
       
-      -- 2. ล้างเอฟเฟกต์ ESP, Blur Background และความเร็วตัวละคร
+      -- Clear Effects & Loops
       togglePlayerESP(false)
+      if LightningParticles then LightningParticles:Destroy() end
+      if LightningAttachment then LightningAttachment:Destroy() end
       if BackgroundBlur then BackgroundBlur:Destroy() end
+      if LightningStrokeLoop then task.cancel(LightningStrokeLoop) end
       
       local hum = getHumanoid()
       if hum then hum.WalkSpeed = 16 end
 
-      -- 3. ทำลายหน้าต่าง UI ออกจากจอแบบถาวร
+      -- Destroy UI
       Rayfield:Destroy()
    end,
 })
 
 Rayfield:Notify({
-   Title = "Ouroboros Blue Glass Hub Loaded",
-   Content = "โหลดฟังก์ชันครบ 100%! มีปุ่มลบ UI ถาวรในแท็บ Visuals & Settings",
+   Title = "THE CRAFT HUB Loaded!",
+   Content = "Cyber Blue Glass Edition ready to use.",
    Duration = 5,
    Image = 4483362458,
 })
