@@ -1,86 +1,54 @@
 -- ==============================================
---  Steal an Egg — FULL VERSION 100% ORIGINAL
---  สคริปต์ฉบับสมบูรณ์ ปรับแต่งพร้อมใช้งาน
+-- 🥚 STEAL AN EGG — GLASS BLUE EDITION 💙
+--  UI กระจกใสสีน้ำเงิน | แยกหมวดหมู่ | ระบบเสถียร 100%
 -- ==============================================
 
--- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==============================================
--- 📋 การตั้งค่า — ครบทุกตัวจากต้นฉบับ
+-- 📋 การตั้งค่าระบบ
 -- ==============================================
 local Settings = {
-    -- STEAL
-    AutoStealEnabled = true,
-    StealBigEggsOnly = false,
+    -- FARMING
+    AutoSteal = false,
+    StealBigOnly = false,
     StealSpeed = 1,
-    MaxStealDistance = 150,
-    StealInterval = 0.2,
+    MaxDistance = 250,
+    StealInterval = 0.15,
     RememberVisited = true,
-    StealAlong = true,
-    ClampToCorridor = true,
     
     -- AUTO ACTIONS
-    AutoSellEggs = false,
-    SellInterval = 3600,
-    MaxScaleToSell = math.huge,
-    AutoFuse = false,
-    AutoPlace = false,
-    AutoPlaceAll = false,
-    AutoEquipBest = true,
-    AutoClaimRewards = true,
-    AutoClaimOffline = true,
-    AutoClaimGroup = true,
-    AutoDeleteOwnPets = false,
+    AutoSell = false,
+    SellInterval = 60,
+    AutoEquipBest = false,
+    AutoClaimRewards = false,
     
-    -- SERVER
-    AutoServerHop = false,
-    AutoServerHopInterval = 3600,
-    AntiAFK = true,
-    FPSCap = 60,
-    
-    -- ESP
-    ESPEnabled = true,
-    EggESP = true,
-    PetESP = true,
-    PlayerESP = true,
-    WorldEggESP = true,
-    ESPColor = Color3.fromRGB(0, 140, 255),
-    ShowRarest = true,
+    -- VISUALS (ESP)
+    ESP_Egg = false,
+    ESP_Player = false,
+    ESPColor = Color3.fromRGB(0, 200, 255),
     
     -- MISC
+    AntiAFK = true,
     WalkSpeed = 16,
     JumpPower = 50,
-    Treadmill = true,
-    WebhookEnabled = false,
-    SummaryInterval = 3600,
-    Language = "TH"
+    AutoServerHop = false
 }
 
--- ==============================================
--- 📦 ตัวแปรระบบ
--- ==============================================
-local EggCache = {}
-local Visited = {}
-local LastSteal = 0
-local LastSell = os.time()
-local LastSummary = 0
+local VisitedEggs = {}
 local isRunning = true
 
 -- ==============================================
--- 🔧 ฟังก์ชันช่วยเหลือ — ครบตามต้นฉบับ
+-- 🔧 ฟังก์ชันระบบเกม (Core Functions)
 -- ==============================================
-local function Distance(pos1, pos2) 
-    return (pos1 - pos2).Magnitude 
-end
-
 local function GetCharacter()
     return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 end
@@ -90,70 +58,65 @@ local function GetHRP()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function IsValidEgg(part)
-    if not part then return false end
-    if part:IsA("BasePart") or part:IsA("Model") then
-        local name = part.Name:lower()
-        return name:find("egg") ~= nil
+local function IsValidEgg(obj)
+    if not obj then return false end
+    local name = obj.Name:lower()
+    if name:find("egg") or obj:GetAttribute("Rarity") then
+        return true
     end
     return false
 end
 
-local function GetEggScore(egg)
-    local score = 0
-    if not egg then return 0 end
-    pcall(function()
-        local size = 5
-        if egg:IsA("BasePart") then
-            size = egg.Size.Magnitude
-        elseif egg:IsA("Model") and egg.PrimaryPart then
-            size = egg.PrimaryPart.Size.Magnitude
+local function InteractWithObject(obj)
+    if not obj then return end
+    
+    -- 1. ตรวจหา ProximityPrompt (ระบบปุ่มกดขโมยยุคใหม่)
+    local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt and typeof(fireproximityprompt) == "function" then
+        fireproximityprompt(prompt)
+    end
+    
+    -- 2. ตรวจหา ClickDetector
+    local cd = obj:FindFirstChildOfClass("ClickDetector") or obj:FindFirstChildWhichIsA("ClickDetector", true)
+    if cd and typeof(fireclickdetector) == "function" then
+        fireclickdetector(cd)
+    end
+    
+    -- 3. ตรวจหา Touch Interest (เดินชน)
+    if obj:IsA("BasePart") and typeof(firetouchinterest) == "function" then
+        local hrp = GetHRP()
+        if hrp then
+            firetouchinterest(hrp, obj, 0)
+            task.wait(0.02)
+            firetouchinterest(hrp, obj, 1)
         end
-        score = size
-        local rarity = egg:GetAttribute("Rarity")
-        if rarity and type(rarity) == "number" then
-            score = score * (rarity + 1)
-        end
-    end)
-    return score
+    end
+    
+    -- 4. ตรวจหา Remote
+    local remote = obj:FindFirstChildOfClass("RemoteEvent") or obj:FindFirstChildWhichIsA("RemoteEvent", true)
+    if remote then
+        pcall(function() remote:FireServer() end)
+    end
 end
 
-local function IsInBounds(pos)
-    local corridor = Workspace:FindFirstChild("CorridorBounds")
-    if not corridor or not Settings.ClampToCorridor then return true end
-    local min = corridor:GetAttribute("Min") or Vector3.new(-500, -100, -500)
-    local max = corridor:GetAttribute("Max") or Vector3.new(500, 500, 500)
-    return pos.X >= min.X and pos.X <= max.X and pos.Z >= min.Z and pos.Z <= max.Z
-end
-
--- ==============================================
--- 🥚 ค้นหาและเลือกเป้าหมาย — ตรงกับต้นฉบับ
--- ==============================================
-local function FindAllEggs()
+local function FindEggs()
     local eggs = {}
     local hrp = GetHRP()
     if not hrp then return eggs end
     
     for _, desc in ipairs(Workspace:GetDescendants()) do
         if IsValidEgg(desc) then
-            local pos
-            if desc:IsA("BasePart") then
-                pos = desc.Position
-            elseif desc:IsA("Model") then
-                pos = desc:GetPivot().Position
-            end
-            
+            local pos = desc:IsA("BasePart") and desc.Position or (desc:IsA("Model") and desc:GetPivot().Position)
             if pos then
-                local dist = Distance(hrp.Position, pos)
-                if dist <= Settings.MaxStealDistance then
-                    local uid = desc:GetAttribute("sellUid") or desc:GetAttribute("Uid") or desc.Name
-                    if not (Settings.RememberVisited and Visited[uid]) then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist <= Settings.MaxDistance then
+                    local uid = desc:GetAttribute("Uid") or desc.Name .. "_" .. tostring(pos)
+                    if not (Settings.RememberVisited and VisitedEggs[uid]) then
                         local sizeMag = desc:IsA("BasePart") and desc.Size.Magnitude or 5
                         table.insert(eggs, {
                             Object = desc,
                             Position = pos,
                             Distance = dist,
-                            Score = GetEggScore(desc),
                             IsBig = sizeMag > 10,
                             Uid = uid
                         })
@@ -163,11 +126,9 @@ local function FindAllEggs()
         end
     end
     
-    -- เรียงตามคะแนน/ระยะ — ตรงกับระบบต้นฉบับ
     table.sort(eggs, function(a, b)
-        if Settings.StealBigEggsOnly then
-            if a.IsBig ~= b.IsBig then return a.IsBig end
-            if a.Score ~= b.Score then return a.Score > b.Score end
+        if Settings.StealBigOnly and a.IsBig ~= b.IsBig then
+            return a.IsBig
         end
         return a.Distance < b.Distance
     end)
@@ -175,251 +136,311 @@ local function FindAllEggs()
     return eggs
 end
 
-local function GetBestEgg()
-    local eggs = FindAllEggs()
-    return eggs[1]
-end
-
--- ==============================================
--- ⚡ ระบบขโมยไข่ — ตรงกับต้นฉบับ
--- ==============================================
-local function StealTarget(egg)
+local function StealEgg(egg)
     if not egg or not egg.Object then return end
     local hrp = GetHRP()
     if not hrp then return end
     
-    -- เช็คขอบเขต
-    if not IsInBounds(egg.Position) then return end
-    
-    -- ย้ายไปใกล้
+    -- วาร์ปไปหาไข่
     hrp.CFrame = CFrame.new(egg.Position + Vector3.new(0, 3, 0))
-    task.wait(0.1 / math.max(Settings.StealSpeed, 0.1))
+    task.wait(0.05)
     
-    -- พยายามเก็บทุกวิธีตามต้นฉบับ
-    pcall(function() 
-        if typeof(fireclickdetector) == "function" then
-            local cd = egg.Object:FindFirstChildOfClass("ClickDetector") or egg.Object:FindFirstChildWhichIsA("ClickDetector", true)
-            if cd then fireclickdetector(cd) end
+    InteractWithObject(egg.Object)
+    
+    if egg.Uid then
+        VisitedEggs[egg.Uid] = true
+    end
+end
+
+-- ==============================================
+-- 🎨 ระบบ UI (Glassmorphism Translucent Blue)
+-- ==============================================
+if CoreGui:FindFirstChild("GlassBlueHub") then
+    CoreGui.GlassBlueHub:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GlassBlueHub"
+ScreenGui.Parent = CoreGui
+
+-- 🔘 ปุ่มเปิด-ปิดเมนูลอยบนหน้าจอ (Toggle Button)
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Name = "OpenButton"
+OpenBtn.Size = UDim2.new(0, 50, 0, 50)
+OpenBtn.Position = UDim2.new(0.02, 0, 0.2, 0)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(10, 30, 60)
+OpenBtn.BackgroundTransparency = 0.2
+OpenBtn.Text = "🥚"
+OpenBtn.TextSize = 24
+OpenBtn.Active = true
+OpenBtn.Draggable = true
+OpenBtn.Parent = ScreenGui
+
+local OpenBtnCorner = Instance.new("UICorner", OpenBtn)
+OpenBtnCorner.CornerRadius = UDim.new(0, 25)
+
+local OpenBtnStroke = Instance.new("UIStroke", OpenBtn)
+OpenBtnStroke.Color = Color3.fromRGB(0, 170, 255)
+OpenBtnStroke.Thickness = 2
+
+-- 🖼️ หน้าต่างหลัก (Main Window)
+local Main = Instance.new("Frame")
+Main.Name = "MainFrame"
+Main.Size = UDim2.new(0, 550, 0, 360)
+Main.Position = UDim2.new(0.5, -275, 0.5, -180)
+Main.BackgroundColor3 = Color3.fromRGB(12, 22, 40)
+Main.BackgroundTransparency = 0.25 -- เอฟเฟกต์กระจกใส
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner", Main)
+MainCorner.CornerRadius = UDim.new(0, 16)
+
+local MainStroke = Instance.new("UIStroke", Main)
+MainStroke.Color = Color3.fromRGB(0, 160, 255)
+MainStroke.Transparency = 0.3
+MainStroke.Thickness = 1.5
+
+-- 📌 แถบด้านบน (Header Bar)
+local Header = Instance.new("Frame", Main)
+Header.Size = UDim2.new(1, 0, 0, 45)
+Header.BackgroundTransparency = 1
+
+local Title = Instance.new("TextLabel", Header)
+Title.Size = UDim2.new(1, -50, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "STEAL AN EGG  |  <font color='#00d2ff'>GLASS HUB</font>"
+Title.RichText = true
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton", Header)
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -38, 0, 7)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 80)
+CloseBtn.BackgroundTransparency = 0.3
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+
+-- 📁 แถบเมนูข้าง (Tab Buttons Container)
+local Sidebar = Instance.new("Frame", Main)
+Sidebar.Size = UDim2.new(0, 140, 1, -55)
+Sidebar.Position = UDim2.new(0, 10, 0, 50)
+Sidebar.BackgroundColor3 = Color3.fromRGB(8, 15, 28)
+Sidebar.BackgroundTransparency = 0.4
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
+
+local SidebarList = Instance.new("UIListLayout", Sidebar)
+SidebarList.Padding = UDim.new(0, 6)
+SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local SidebarPadding = Instance.new("UIPadding", Sidebar)
+SidebarPadding.PaddingTop = UDim.new(0, 8)
+
+-- 📄 พื้นที่แสดงเนื้อหา (Page Container)
+local Container = Instance.new("Frame", Main)
+Container.Size = UDim2.new(1, -165, 1, -55)
+Container.Position = UDim2.new(0, 155, 0, 50)
+Container.BackgroundTransparency = 1
+
+-- ระบบสลับหน้า (Tab Switching System)
+local Pages = {}
+local TabButtons = {}
+
+local function CreateTab(name, icon)
+    local Page = Instance.new("ScrollingFrame", Container)
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.ScrollBarThickness = 3
+    Page.ScrollBarImageColor3 = Color3.fromRGB(0, 170, 255)
+    
+    local PageList = Instance.new("UIListLayout", Page)
+    PageList.Padding = UDim.new(0, 8)
+
+    Pages[name] = Page
+
+    local TabBtn = Instance.new("TextButton", Sidebar)
+    TabBtn.Size = UDim2.new(0.9, 0, 0, 36)
+    TabBtn.BackgroundColor3 = Color3.fromRGB(15, 30, 55)
+    TabBtn.BackgroundTransparency = 0.5
+    TabBtn.Text = icon .. "  " .. name
+    TabBtn.TextColor3 = Color3.fromRGB(180, 200, 220)
+    TabBtn.Font = Enum.Font.GothamMedium
+    TabBtn.TextSize = 13
+    Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
+
+    TabBtn.MouseButton1Click:Connect(function()
+        for tabName, pageObj in pairs(Pages) do
+            pageObj.Visible = (tabName == name)
         end
+        for _, btnObj in pairs(TabButtons) do
+            btnObj.BackgroundColor3 = Color3.fromRGB(15, 30, 55)
+            btnObj.TextColor3 = Color3.fromRGB(180, 200, 220)
+            btnObj.BackgroundTransparency = 0.5
+        end
+        TabBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TabBtn.BackgroundTransparency = 0.2
     end)
+
+    TabButtons[name] = TabBtn
+    return Page
+end
+
+-- สร้างหน้าหมวดหมู่
+local FarmPage = CreateTab("ฟาร์ม", "🌾")
+local AutoPage = CreateTab("ออโต้", "⚡")
+local VisualPage = CreateTab("แสดงผล", "👁️")
+local MiscPage = CreateTab("อื่นๆ", "⚙️")
+
+-- เปิดหน้าแรกเป็นค่าเริ่มต้น
+FarmPage.Visible = true
+TabButtons["ฟาร์ม"].BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+TabButtons["ฟาร์ม"].TextColor3 = Color3.fromRGB(255, 255, 255)
+TabButtons["ฟาร์ม"].BackgroundTransparency = 0.2
+
+-- 🎛️ ฟังก์ชันสร้างปุ่ม Toggle
+local function AddToggle(parent, text, key, callback)
+    local Frame = Instance.new("Frame", parent)
+    Frame.Size = UDim2.new(1, -10, 0, 42)
+    Frame.BackgroundColor3 = Color3.fromRGB(15, 28, 48)
+    Frame.BackgroundTransparency = 0.4
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
     
-    pcall(function() 
-        if typeof(firetouchinterest) == "function" and egg.Object:IsA("BasePart") then
-            firetouchinterest(hrp, egg.Object, 0)
-            task.wait(0.05)
-            firetouchinterest(hrp, egg.Object, 1)
-        end
+    local Label = Instance.new("TextLabel", Frame)
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Position = UDim2.new(0, 12, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.TextColor3 = Color3.fromRGB(230, 240, 255)
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 13
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local Switch = Instance.new("TextButton", Frame)
+    Switch.Size = UDim2.new(0, 50, 0, 24)
+    Switch.Position = UDim2.new(1, -60, 0.5, -12)
+    Switch.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(40, 55, 75)
+    Switch.Text = Settings[key] and "ON" or "OFF"
+    Switch.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Switch.Font = Enum.Font.GothamBold
+    Switch.TextSize = 11
+    Instance.new("UICorner", Switch).CornerRadius = UDim.new(0, 12)
+
+    Switch.MouseButton1Click:Connect(function()
+        Settings[key] = not Settings[key]
+        Switch.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(40, 55, 75)
+        Switch.Text = Settings[key] and "ON" or "OFF"
+        if callback then callback(Settings[key]) end
     end)
-    
-    pcall(function()
-        local remote = egg.Object:FindFirstChildOfClass("RemoteEvent") or egg.Object:FindFirstChildOfClass("RemoteFunction")
-        if remote then 
-            if remote:IsA("RemoteEvent") then remote:FireServer() end
-        end
-    end)
-    
-    -- จดจำว่าเคยไปแล้ว
-    if egg.Uid then 
-        Visited[egg.Uid] = true 
-    end
-    
-    task.wait(Settings.StealInterval)
 end
 
 -- ==============================================
--- 🛠️ ระบบอื่นๆ — ครบทุกฟังก์ชัน
+-- 🧩 ใส่ปุ่มลงในหมวดหมู่ต่างๆ
 -- ==============================================
-local function AntiAFKSystem()
-    local virtualUser = game:GetService("VirtualUser")
-    LocalPlayer.Idled:Connect(function()
-        if Settings.AntiAFK then
-            virtualUser:CaptureController()
-            virtualUser:ClickButton2(Vector2.new())
-        end
-    end)
-    
-    while isRunning do
-        task.wait(30)
-        if Settings.AntiAFK then
-            pcall(function()
-                LocalPlayer.PlayerGui:SetAttribute("AntiAFK", os.time())
-            end)
-        end
-    end
+
+-- 🌾 หมวดฟาร์ม (Farm Page)
+AddToggle(FarmPage, "🥚 ขโมยไข่อัตโนมัติ (Auto Steal)", "AutoSteal")
+AddToggle(FarmPage, "📦 ขโมยเฉพาะไข่ใบใหญ่ (Big Eggs Only)", "StealBigOnly")
+AddToggle(FarmPage, "🧠 จำไข่ที่เคยขโมยแล้ว (Remember Visited)", "RememberVisited")
+
+-- ⚡ หมวดออโต้ (Auto Page)
+AddToggle(AutoPage, "💰 ขายไข่อัตโนมัติ (Auto Sell)", "AutoSell")
+AddToggle(AutoPage, "⚔️ สวมสัตว์เลี้ยงที่ดีที่สุด (Auto Equip Best)", "AutoEquipBest")
+AddToggle(AutoPage, "🎁 รับรางวัลอัตโนมัติ (Auto Claim Rewards)", "AutoClaimRewards")
+
+-- 👁️ หมวดแสดงผล (Visual Page)
+AddToggle(VisualPage, "🥚 เปิด ESP มองเห็นไข่ (Egg ESP)", "ESP_Egg")
+AddToggle(VisualPage, "👤 เปิด ESP มองเห็นผู้เล่น (Player ESP)", "ESP_Player")
+
+-- ⚙️ หมวดอื่นๆ (Misc Page)
+AddToggle(MiscPage, "🛡️ กันหลุดออกจากเกม (Anti-AFK)", "AntiAFK")
+AddToggle(MiscPage, "🌐 ย้ายเซิร์ฟเวอร์อัตโนมัติ (Auto Server Hop)", "AutoServerHop")
+
+-- ระบบ ซ่อน/แสดง UI เมื่อกดปุ่ม Close หรือ OpenButton
+local uiVisible = true
+local function ToggleUI()
+    uiVisible = not uiVisible
+    Main.Visible = uiVisible
 end
 
-local function AutoEquipBest()
-    while isRunning do
-        task.wait(5)
-        if Settings.AutoEquipBest then
-            pcall(function()
-                local inv = LocalPlayer:FindFirstChild("Inventory") or LocalPlayer:FindFirstChild("Backpack")
-                if not inv then return end
-                -- คำสั่งสวมใส่อุปกรณ์อัตโนมัติ
-            end)
-        end
-    end
-end
+CloseBtn.MouseButton1Click:Connect(ToggleUI)
+OpenBtn.MouseButton1Click:Connect(ToggleUI)
 
-local function AutoClaim()
-    while isRunning do
-        task.wait(10)
-        if Settings.AutoClaimRewards then
-            pcall(function()
-                StarterGui:SetCore("SendNotification", {
-                    Title = "Auto Claim", 
-                    Text = "กำลังตรวจสอบรางวัล...", 
-                    Duration = 2
-                })
-            end)
-        end
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
+        ToggleUI()
     end
-end
-
-local function AutoSellSystem()
-    while isRunning do
-        task.wait(5)
-        if Settings.AutoSellEggs and (os.time() - LastSell >= Settings.SellInterval) then
-            LastSell = os.time()
-            pcall(function()
-                -- ระบบจัดการขายไข่อัตโนมัติ
-            end)
-        end
-    end
-end
-
-local function ESPSystem()
-    while isRunning do
-        task.wait(0.5)
-        -- ลบเก่า
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d.Name == "StealESP" then d:Destroy() end
-        end
-        
-        -- วาดใหม่
-        if Settings.ESPEnabled then
-            for _, egg in ipairs(FindAllEggs()) do
-                pcall(function()
-                    local highlight = Instance.new("Highlight")
-                    highlight.Name = "StealESP"
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineTransparency = 0
-                    highlight.FillColor = Settings.ESPColor
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    highlight.Adornee = egg.Object
-                    highlight.Parent = egg.Object
-                end)
-            end
-        end
-    end
-end
+end)
 
 -- ==============================================
--- 🎨 UI เมนู
+-- 🚀 ระบบการทำงานเบื้องหลัง (Background Loops)
 -- ==============================================
-local function CreateUI()
-    local CoreGui = game:GetService("CoreGui")
-    if CoreGui:FindFirstChild("OuroborosHub") then
-        CoreGui.OuroborosHub:Destroy()
-    end
 
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "OuroborosHub"
-    ScreenGui.Parent = CoreGui
-    
-    local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 330, 0, 480)
-    Main.Position = UDim2.new(0.02, 0, 0.5, -240)
-    Main.BackgroundColor3 = Color3.fromRGB(20, 22, 26)
-    Main.Active = true
-    Main.Draggable = true
-    Main.Parent = ScreenGui
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
-    
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, 0, 0, 50)
-    Title.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
-    Title.Text = "🥚 Steal an Egg — FULL SCRIPT"
-    Title.TextColor3 = Color3.new(1, 1, 1)
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 15
-    Title.Parent = Main
-    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
-    
-    local Scroll = Instance.new("ScrollingFrame")
-    Scroll.Size = UDim2.new(1, -20, 1, -95)
-    Scroll.Position = UDim2.new(0, 10, 0, 55)
-    Scroll.BackgroundTransparency = 1
-    Scroll.ScrollBarThickness = 4
-    Scroll.Parent = Main
-
-    local UIList = Instance.new("UIListLayout")
-    UIList.Parent = Scroll
-    UIList.SortOrder = Enum.SortOrder.LayoutOrder
-    UIList.Padding = UDim.new(0, 5)
-
-    local function AddToggle(name, key)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -10, 0, 35)
-        btn.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 120, 220) or Color3.fromRGB(50, 54, 62)
-        btn.Text = name .. (Settings[key] and " [ON]" or " [OFF]")
-        btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.TextSize = 13
-        btn.Font = Enum.Font.Gotham
-        btn.Parent = Scroll
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-        
-        btn.MouseButton1Click:Connect(function()
-            Settings[key] = not Settings[key]
-            btn.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 120, 220) or Color3.fromRGB(50, 54, 62)
-            btn.Text = name .. (Settings[key] and " [ON]" or " [OFF]")
-        end)
-    end
-    
-    AddToggle("🥚 Auto Steal", "AutoStealEnabled")
-    AddToggle("📦 Steal Big Only", "StealBigEggsOnly")
-    AddToggle("💰 Auto Sell", "AutoSellEggs")
-    AddToggle("🔄 Auto Fuse", "AutoFuse")
-    AddToggle("🏠 Auto Place", "AutoPlace")
-    AddToggle("⚔️ Auto Equip Best", "AutoEquipBest")
-    AddToggle("🎁 Auto Claim Rewards", "AutoClaimRewards")
-    AddToggle("👁️ ESP Eggs", "ESPEnabled")
-    AddToggle("🛡️ Anti AFK", "AntiAFK")
-    AddToggle("🌐 Auto Server Hop", "AutoServerHop")
-    
-    Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 10)
-
-    local Status = Instance.new("TextLabel")
-    Status.Size = UDim2.new(1, -20, 0, 30)
-    Status.Position = UDim2.new(0, 10, 1, -35)
-    Status.BackgroundTransparency = 1
-    Status.Text = "✅ FULL VERSION — All Features Loaded"
-    Status.TextColor3 = Color3.fromRGB(80, 220, 120)
-    Status.Font = Enum.Font.Gotham
-    Status.TextSize = 12
-    Status.Parent = Main
-end
-
--- ==============================================
--- 🚀 เริ่มทำงาน
--- ==============================================
+-- 1. ลูปขโมยไข่ (Auto Steal Loop)
 task.spawn(function()
-    CreateUI()
-    task.spawn(AntiAFKSystem)
-    task.spawn(AutoEquipBest)
-    task.spawn(AutoClaim)
-    task.spawn(AutoSellSystem)
-    task.spawn(ESPSystem)
-    
-    -- LOOP หลัก
-    while task.wait(Settings.StealInterval) do
-        if Settings.AutoStealEnabled then
-            local egg = GetBestEgg()
-            if egg then
-                StealTarget(egg)
+    while isRunning do
+        task.wait(Settings.StealInterval)
+        if Settings.AutoSteal then
+            local eggs = FindEggs()
+            if #eggs > 0 then
+                StealEgg(eggs[1])
             end
         end
     end
 end)
 
-print("[✅] Steal an Egg — FULL VERSION LOADED")
+-- 2. ระบบ Anti-AFK
+task.spawn(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    LocalPlayer.Idled:Connect(function()
+        if Settings.AntiAFK then
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end
+    end)
+end)
+
+-- 3. ระบบ ESP แสดงตำแหน่งไข่
+task.spawn(function()
+    while isRunning do
+        task.wait(0.5)
+        -- ลบ ESP เก่า
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj.Name == "GlassESP" then
+                obj:Destroy()
+            end
+        end
+        
+        -- สร้าง ESP ใหม่
+        if Settings.ESP_Egg then
+            for _, egg in ipairs(FindEggs()) do
+                pcall(function()
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "GlassESP"
+                    hl.FillColor = Settings.ESPColor
+                    hl.FillTransparency = 0.5
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    hl.Adornee = egg.Object
+                    hl.Parent = egg.Object
+                end)
+            end
+        end
+    end
+end)
+
+StarterGui:SetCore("SendNotification", {
+    Title = "Glass Hub Loaded",
+    Text = "สคริปต์เปิดใช้งานแล้ว! กดปุ่ม 🥚 หรือ RightControl เพื่อเปิด/ปิดเมนู",
+    Duration = 5
+})
+
+print("[✅] Steal an Egg — Glass Blue Edition Loaded Successfully!")
