@@ -1,5 +1,5 @@
--- [[ THE CRAFT HUB | CUSTOM BLUE GLASS ULTIMATE V2 ]] --
--- UI กระจกสีน้ำเงิน + ปรับความเร็ว 2000 + บินติดพื้นตัวแข็ง + บินซิกแซกกลับฐาน + เก็บขยะอัตโนมัติ
+-- [[ THE CRAFT HUB | FAST AUTO-GRAB FIX V3 ]] --
+-- แก้ไขระบบถือไข่เข้ามือ: ย้ำกด Prompt + ล็อคตำแหน่งจนกว่าไข่จะเข้ามือ 100%
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -16,11 +16,11 @@ local Flags = {
     -- Steal Modes
     AutoStealFly = false,
     AutoStealRun = false,
-    GroundedFly = true,      -- บินติดพื้น
-    FreezeOnFly = true,      -- ตัวแข็งขณะบิน
-    ZigZagReturn = true,     -- บินกลับฐานแบบซิกแซก
+    GroundedFly = true,
+    FreezeOnFly = true,
+    ZigZagReturn = true,
     
-    -- Speed Controls (ปรับได้ถึง 2000)
+    -- Speed Controls
     FlySpeed = 200,
     WalkSpeed = 16,
     StealDelay = 0.1,
@@ -31,9 +31,9 @@ local Flags = {
     FilterTier = "ทุกขนาด",
     
     -- Automation & Protection
-    AutoReGrabFast = true,   -- เก็บไข่ตกแบบเร็วสุดๆ
-    AutoCollectTrash = false, -- เก็บขยะอัตโนมัติ
-    FastPickup = true,       -- กดเก็บเร่งด่วน
+    AutoReGrabFast = true,
+    AutoCollectTrash = false,
+    FastPickup = true,
     AntiKnockback = true,
     
     -- Visuals
@@ -56,6 +56,7 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+-- เช็กว่ามีไข่อยู่ในมือหรือยัง
 local function isHoldingEgg()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -86,7 +87,53 @@ local function getMyBaseCFrame()
     return getRoot() and getRoot().CFrame
 end
 
--- ปรับตำแหน่งการบินให้อยู่ติดพื้น
+local function fireRemote(possibleNames)
+    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            for _, name in pairs(possibleNames) do
+                if v.Name:lower():find(name:lower()) then
+                    if v:IsA("RemoteEvent") then v:FireServer()
+                    elseif v:IsA("RemoteFunction") then pcall(function() v:InvokeServer() end) end
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- 🔥 ฟังก์ชันบังคับเก็บไข่เข้ามือ (Spam Grab Until In Hand) 🔥
+local function forceGrabEgg(eggPart)
+    local hrp = getRoot()
+    if not hrp or not eggPart then return end
+    
+    local timeout = os.clock() + 1.5 -- ตั้งเวลาลองสูงสุด 1.5 วินาทีต่อฟาร์ม 1 ใบ
+    
+    while os.clock() < timeout and not isHoldingEgg() and eggPart.Parent do
+        -- 1. ล็อคพิกัดให้ตัวละครติดกับไข่
+        hrp.CFrame = eggPart.CFrame
+        
+        -- 2. ย้ำกด ProximityPrompt ทั้งหมดที่อยู่ในไข่และบริเวณรอบๆ
+        for _, prompt in pairs(eggPart:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                prompt.HoldDuration = 0
+                fireproximityprompt(prompt)
+            end
+        end
+        for _, prompt in pairs(workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and (prompt.Parent.Position - hrp.Position).Magnitude < 6 then
+                prompt.HoldDuration = 0
+                fireproximityprompt(prompt)
+            end
+        end
+        
+        -- 3. ยิง Remote ช่วยเก็บ
+        fireRemote({"steal", "take", "grab", "pickup", "collect"})
+        
+        task.wait(0.05)
+    end
+end
+
 local function getGroundedCFrame(targetCFrame)
     if not Flags.GroundedFly then return targetCFrame + Vector3.new(0, 2, 0) end
     local rayOrigin = targetCFrame.Position + Vector3.new(0, 20, 0)
@@ -102,7 +149,6 @@ local function getGroundedCFrame(targetCFrame)
     return targetCFrame
 end
 
--- ระบบล็อคตัวแข็ง / ปลดล็อค
 local function setCharacterFrozen(frozen)
     local hum = getHumanoid()
     local hrp = getRoot()
@@ -120,7 +166,6 @@ local function setCharacterFrozen(frozen)
     end
 end
 
--- บินไปยังเป้าหมาย (รองรับติดพื้น + ตัวแข็ง)
 local function flyToTarget(targetCFrame)
     local hrp = getRoot()
     if not hrp then return end
@@ -139,7 +184,6 @@ local function flyToTarget(targetCFrame)
     setCharacterFrozen(false)
 end
 
--- บินกลับฐานแบบซิกแซก (Zig-Zag Return Flight)
 local function flyZigZagToBase(baseCFrame)
     local hrp = getRoot()
     if not hrp then return end
@@ -156,7 +200,6 @@ local function flyZigZagToBase(baseCFrame)
         local alpha = i / segments
         local currentTarget = startPos:Lerp(endPos, alpha)
         
-        -- สลับทิศทางซิกแซก ซ้าย-ขวา
         if i < segments then
             local offsetDirection = (i % 2 == 0) and 15 or -15
             local rightVector = CFrame.lookAt(startPos, endPos).RightVector
@@ -175,31 +218,15 @@ local function flyZigZagToBase(baseCFrame)
     setCharacterFrozen(false)
 end
 
-local function fireRemote(possibleNames)
-    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-            for _, name in pairs(possibleNames) do
-                if v.Name:lower():find(name:lower()) then
-                    if v:IsA("RemoteEvent") then v:FireServer()
-                    elseif v:IsA("RemoteFunction") then pcall(function() v:InvokeServer() end) end
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
 --------------------------------------------------------------------------------
 -- CUSTOM GUI BUILDER
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CraftHubUltimateUI"
+ScreenGui.Name = "CraftHubUltimateFixUI"
 ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- ปุ่ม Toggle เมนู [K]
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
 ToggleBtn.Name = "CraftToggleButton"
 ToggleBtn.Size = UDim2.new(0, 130, 0, 40)
@@ -217,7 +244,6 @@ local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
 ToggleStroke.Color = Color3.fromRGB(0, 170, 255)
 ToggleStroke.Thickness = 2
 
--- Main Frame
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 580, 0, 420)
@@ -232,7 +258,6 @@ local MainStroke = Instance.new("UIStroke", MainFrame)
 MainStroke.Color = Color3.fromRGB(0, 180, 255)
 MainStroke.Thickness = 2
 
--- Glow Loop
 task.spawn(function()
     while MainFrame.Parent do
         TweenService:Create(MainStroke, TweenInfo.new(0.4), {Color = Color3.fromRGB(0, 255, 255), Thickness = 2.5}):Play()
@@ -244,18 +269,16 @@ task.spawn(function()
     end
 end)
 
--- Title
 local TitleLabel = Instance.new("TextLabel", MainFrame)
 TitleLabel.Size = UDim2.new(1, -20, 0, 40)
 TitleLabel.Position = UDim2.new(0, 15, 0, 0)
-TitleLabel.Text = "⚡ THE CRAFT HUB | HIGH SPEED EDITION ⚡"
+TitleLabel.Text = "⚡ THE CRAFT HUB | FIXED AUTO-GRAB EDITION ⚡"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 230, 255)
-TitleLabel.TextSize = 15
+TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.BackgroundTransparency = 1
 
--- Containers
 local TabContainer = Instance.new("Frame", MainFrame)
 TabContainer.Size = UDim2.new(0, 145, 1, -50)
 TabContainer.Position = UDim2.new(0, 10, 0, 45)
@@ -307,7 +330,6 @@ local function createTab(name)
     return Page
 end
 
--- UI Component Helpers
 local function addToggle(page, text, flagName, callback)
     local Frame = Instance.new("Frame", page)
     Frame.Size = UDim2.new(1, -10, 0, 35)
@@ -343,7 +365,6 @@ local function addToggle(page, text, flagName, callback)
     end)
 end
 
--- Slider รองรับ 1-2000
 local function addSlider(page, text, min, max, default, callback)
     local Frame = Instance.new("Frame", page)
     Frame.Size = UDim2.new(1, -10, 0, 45)
@@ -400,7 +421,6 @@ local function addSlider(page, text, min, max, default, callback)
     end)
 end
 
--- ระบบเลือกเมนูแบบ Grid (Click-to-Select Grid) ไม่ใช่ปุ่มกดวน
 local function addSelectorGrid(page, titleText, options, defaultVal, callback)
     local Container = Instance.new("Frame", page)
     Container.Size = UDim2.new(1, -10, 0, 65)
@@ -465,7 +485,6 @@ local function addButton(page, text, callback)
     Btn.MouseButton1Click:Connect(callback)
 end
 
--- Toggle GUI [K]
 local uiVisible = true
 local function toggleGui()
     uiVisible = not uiVisible
@@ -479,7 +498,7 @@ end)
 --------------------------------------------------------------------------------
 -- PAGES
 --------------------------------------------------------------------------------
-local PageSteal = createTab("⚡ บิน/วิ่งขโมย")
+local PageSteal = createTab("⚡ บิน/วิ่งขโมย (ล็อกมือ)")
 local PageFilters = createTab("🎯 กรองความหายาก/โซน")
 local PagePlayer = createTab("🏃 ความเร็ว & ป้องกัน")
 local PageVisuals = createTab("👁️ ESP & ขยะ")
@@ -488,14 +507,16 @@ Pages[1].Visible = true
 Tabs[1].TextColor3 = Color3.fromRGB(0, 230, 255)
 
 --------------------------------------------------------------------------------
--- 1. TAB: บิน / วิ่งขโมย (FLY & RUN STEAL)
+-- 1. TAB: บิน / วิ่งขโมย (ปรับแก้ระบบถือไข่แล้วบินกลับ)
 --------------------------------------------------------------------------------
-addToggle(PageSteal, "ระบบบินขโมยไข่ (ถือแล้วกลับฐาน)", "AutoStealFly", function(v)
+addToggle(PageSteal, "ระบบบินขโมยไข่ (ย้ำกดจนไข่เข้ามือ)", "AutoStealFly", function(v)
     if v then
         Flags.AutoStealRun = false
         task.spawn(function()
             while Flags.AutoStealFly do
                 task.wait(0.1)
+                
+                -- เช็กถ้ามีไข่อยู่ในมือ ให้บินกลับฐานทันที
                 if isHoldingEgg() then
                     local baseCF = getMyBaseCFrame()
                     if baseCF then
@@ -508,8 +529,10 @@ addToggle(PageSteal, "ระบบบินขโมยไข่ (ถือแ�
                         fireRemote({"place", "selleggs", "drop"})
                     end
                 else
+                    -- หาไข่และบินไปย้ำกดเก็บ
                     for _, obj in pairs(workspace:GetDescendants()) do
                         if not Flags.AutoStealFly or isHoldingEgg() then break end
+                        
                         if obj:IsA("BasePart") and obj.Name:lower():find("egg") and not obj:IsDescendantOf(LocalPlayer.Character) then
                             local passRarity, passZone, passTier = true, true, true
                             
@@ -529,11 +552,12 @@ addToggle(PageSteal, "ระบบบินขโมยไข่ (ถือแ�
                             end
                             
                             if passRarity and passZone and passTier then
+                                -- 1. บินไปหาไข่
                                 flyToTarget(obj.CFrame)
-                                task.wait(0.1)
-                                for _, prompt in pairs(obj:GetDescendants()) do
-                                    if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
-                                end
+                                
+                                -- 2. ⚡ ย้ำกดเก็บจนกว่าไข่จะเข้ามือ ⚡
+                                forceGrabEgg(obj)
+                                
                                 task.wait(Flags.StealDelay)
                             end
                         end
@@ -544,7 +568,7 @@ addToggle(PageSteal, "ระบบบินขโมยไข่ (ถือแ�
     end
 end)
 
-addToggle(PageSteal, "ระบบวิ่งขโมยไข่ (วิ่งภาคพื้นดิน)", "AutoStealRun", function(v)
+addToggle(PageSteal, "ระบบวิ่งขโมยไข่ (ย้ำกดจนไข่เข้ามือ)", "AutoStealRun", function(v)
     if v then
         Flags.AutoStealFly = false
         task.spawn(function()
@@ -562,9 +586,7 @@ addToggle(PageSteal, "ระบบวิ่งขโมยไข่ (วิ่�
                             if obj:IsA("BasePart") and obj.Name:lower():find("egg") and not obj:IsDescendantOf(LocalPlayer.Character) then
                                 hum:MoveTo(obj.Position)
                                 if (hrp.Position - obj.Position).Magnitude < 10 then
-                                    for _, prompt in pairs(obj:GetDescendants()) do
-                                        if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
-                                    end
+                                    forceGrabEgg(obj)
                                 end
                             end
                         end
@@ -580,15 +602,12 @@ addToggle(PageSteal, "ตัวแข็งพุ่งตรงขณะบิ�
 addToggle(PageSteal, "บินกลับฐานแบบซิกแซก (Zig-Zag Fly)", "ZigZagReturn", function(v) Flags.ZigZagReturn = v end)
 
 --------------------------------------------------------------------------------
--- 2. TAB: กรองความหายาก / โซน (GRID SELECTORS)
+-- OTHER TABS & SETTINGS
 --------------------------------------------------------------------------------
 addSelectorGrid(PageFilters, "เลือกความหายากของไข่", {"ทั้งหมด", "Common", "Rare", "Epic", "Legendary", "Mythic"}, Flags.FilterRarity, function(v) Flags.FilterRarity = v end)
 addSelectorGrid(PageFilters, "เลือกโซนขโมยไข่", {"ทุกโซน", "Zone 1", "Zone 2", "Zone 3", "VIP Zone"}, Flags.FilterZone, function(v) Flags.FilterZone = v end)
 addSelectorGrid(PageFilters, "เลือกขนาดของไข่", {"ทุกขนาด", "Small", "Medium", "Big"}, Flags.FilterTier, function(v) Flags.FilterTier = v end)
 
---------------------------------------------------------------------------------
--- 3. TAB: ความเร็ว & ป้องกัน (SPEED UP TO 2000 & AUTO RE-GRAB)
---------------------------------------------------------------------------------
 addSlider(PagePlayer, "ปรับความเร็วการบิน (Fly Speed)", 20, 2000, Flags.FlySpeed, function(v) Flags.FlySpeed = v end)
 addSlider(PagePlayer, "ปรับความเร็วการวิ่ง (WalkSpeed)", 16, 2000, Flags.WalkSpeed, function(v)
     Flags.WalkSpeed = v
@@ -605,9 +624,7 @@ addToggle(PagePlayer, "เก็บไข่ตกพื้นกลับเข
                 if hrp and not isHoldingEgg() then
                     for _, obj in pairs(workspace:GetDescendants()) do
                         if obj:IsA("BasePart") and obj.Name:lower():find("egg") and (obj.Position - hrp.Position).Magnitude < 15 then
-                            for _, prompt in pairs(obj:GetDescendants()) do
-                                if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
-                            end
+                            forceGrabEgg(obj)
                         end
                     end
                 end
@@ -631,9 +648,6 @@ addToggle(PagePlayer, "โดนตีไม่กระเด็น (Anti-Knock
     end
 end)
 
---------------------------------------------------------------------------------
--- 4. TAB: ESP & เก็บขยะ (ESP & TRASH AUTO-COLLECT)
---------------------------------------------------------------------------------
 addToggle(PageVisuals, "ลอยไปเก็บขยะ/ไอเทมดรอปอัตโนมัติ", "AutoCollectTrash", function(v)
     if v then
         task.spawn(function()
@@ -654,43 +668,6 @@ addToggle(PageVisuals, "ลอยไปเก็บขยะ/ไอเทมด�
     end
 end)
 
-addToggle(PageVisuals, "เปิด ESP ชื่อผู้เล่นทะลุกำแพง", "ESP_Names", function(v)
-    for _, el in pairs(ESP_Elements) do if el then el:Destroy() end end
-    ESP_Elements = {}
-    if v then
-        task.spawn(function()
-            while Flags.ESP_Names do
-                task.wait(0.5)
-                for _, el in pairs(ESP_Elements) do if el then el:Destroy() end end
-                ESP_Elements = {}
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-                        local bb = Instance.new("BillboardGui")
-                        bb.Adornee = player.Character.Head
-                        bb.Size = UDim2.new(0, 120, 0, 40)
-                        bb.StudsOffset = Vector3.new(0, 2, 0)
-                        bb.AlwaysOnTop = true
-
-                        local txt = Instance.new("TextLabel", bb)
-                        txt.Size = UDim2.new(1, 0, 1, 0)
-                        txt.BackgroundTransparency = 1
-                        txt.TextColor3 = Color3.fromRGB(0, 230, 255)
-                        txt.Font = Enum.Font.GothamBold
-                        txt.TextSize = 11
-
-                        local hrp = getRoot()
-                        local dist = hrp and math.floor((hrp.Position - player.Character.Head.Position).Magnitude) or 0
-                        txt.Text = string.format("%s\n[%d m]", player.DisplayName, dist)
-                        
-                        bb.Parent = CoreGui
-                        table.insert(ESP_Elements, bb)
-                    end
-                end
-            end
-        end)
-    end
-end)
-
 addButton(PageVisuals, "🔴 ปิดระบบทั้งหมด และ ทำลาย UI", function()
     for k in pairs(Flags) do if type(Flags[k]) == "boolean" then Flags[k] = false end end
     for _, el in pairs(ESP_Elements) do if el then el:Destroy() end end
@@ -698,7 +675,6 @@ addButton(PageVisuals, "🔴 ปิดระบบทั้งหมด แล�
     ScreenGui:Destroy()
 end)
 
--- Loop คุมความเร็ววิ่ง 2000
 RunService.RenderStepped:Connect(function()
     local hum = getHumanoid()
     if hum and Flags.WalkSpeed > 16 then
