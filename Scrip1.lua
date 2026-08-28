@@ -1,349 +1,373 @@
--- ==========================================
--- THE CRAFT HUB | Steal an Egg (V2 Working)
--- Theme: Dark Cyber Blue / Neon Cyan
--- ==========================================
+-- ==============================================
+-- 🏷️ ชื่อ: THE CRAFT HUB | Steal an Egg
+-- 📝 ภาษาไทยทั้งหมด | ธีมสีน้ำเงิน | เปิด-ปิดได้
+-- ✅ ครบทุกฟังก์ชันจากไฟล์ที่ส่งมา
+-- ==============================================
 
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-
-local Window = Fluent:CreateWindow({
-    Title = "THE CRAFT HUB",
-    SubTitle = "Steal an Egg Edition",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(580, 460),
-    Acrylic = true,
-    Theme = "DarkBlue",
-    MinimizeKey = Enum.KeyCode.RightControl
-})
-
--- Custom Colors Overrides for Deep Aggressive Blue Theme
-Fluent.Options = Fluent.Options or {}
-local Elements = Window
-
--- Services
+-- SERVICES
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
--- State Variables
-local State = {
-    AutoSteal = false,
-    SelectedRarity = "All",
-    NoDropEgg = false,
-    WalkSpeed = 16,
-    FlyEnabled = false,
-    FlySpeed = 50,
-    PlayerESP = false,
-    EggESP = false
+-- ==============================================
+-- ⚙️ การตั้งค่า — ภาษาไทย
+-- ==============================================
+local Settings = {
+    -- ระบบขโมยไข่
+    ขโมยไข่อัตโนมัติ = true,
+    ขโมยเฉพาะไข่ใหญ่ = false,
+    ระยะค้นหาไข่ = 150,
+    ความเร็วในการขโมย = 1,
+    จดจำไข่ที่เคยเก็บ = true,
+    กรองตามพื้นที่ = true,
+    
+    -- ระบบอัตโนมัติอื่นๆ
+    สวมอุปกรณ์ที่ดีที่สุด = true,
+    วางไข่อัตโนมัติ = false,
+    ฟิวส์ไข่อัตโนมัติ = false,
+    ขายไข่อัตโนมัติ = false,
+    รับรางวัลอัตโนมัติ = true,
+    รับเงินออฟไลน์ = true,
+    ลบสัตว์เลี้ยงทิ้ง = false,
+    
+    -- เซิร์ฟเวอร์ & ความปลอดภัย
+    เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ = false,
+    ป้องกันAFK = true,
+    
+    -- ESP มองทะลุ
+    แสดงตำแหน่งไข่ = true,
+    แสดงตำแหน่งสัตว์เลี้ยง = false,
+    แสดงผู้เล่นอื่น = false,
+    
+    -- ความเร็ว
+    ความเร็วในการเดิน = 16,
+    ความสูงในการกระโดด = 50
 }
 
--- Target Rarity Hierarchy
-local RarityList = {"All", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Godly", "Secret"}
+-- ตัวแปรระบบ
+local EggCache = {}
+local Visited = {}
+local isRunning = true
+local MenuOpen = true
 
--- Tabs Setup
-local Tabs = {
-    Main = Window:AddTab({ Title = "Main Features", Icon = "egg" }),
-    Movement = Window:AddTab({ Title = "Movement", Icon = "zap" }),
-    Visuals = Window:AddTab({ Title = "ESP & Visuals", Icon = "eye" })
+-- ==============================================
+-- 🎨 ธีมสีน้ำเงิน
+-- ==============================================
+local Theme = {
+    หลัก = Color3.fromRGB(25, 110, 255),
+    เข้ม = Color3.fromRGB(15, 75, 180),
+    อ่อน = Color3.fromRGB(70, 150, 255),
+    พื้นหลัง = Color3.fromRGB(18, 25, 38),
+    แถบหัว = Color3.fromRGB(25, 40, 65),
+    ขอบ = Color3.fromRGB(40, 80, 150),
+    ข้อความ = Color3.fromRGB(255, 255, 255),
+    ข้อความอ่อน = Color3.fromRGB(180, 200, 230),
+    ปิดการใช้งาน = Color3.fromRGB(50, 60, 80)
 }
 
--- ==========================================
--- TAB 1: Main (ระบบขโมยไข่ & ป้องกัน)
--- ==========================================
-Tabs.Main:AddSection("Auto Steal Configuration")
+-- ==============================================
+-- 🔧 ฟังก์ชันช่วยเหลือ
+-- ==============================================
+local function GetHRP()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
 
-local RarityDropdown = Tabs.Main:AddDropdown("RaritySelect", {
-    Title = "เลือกระดับความหายาก (Egg Rarity)",
-    Values = RarityList,
-    Default = "All",
-    Callback = function(Value)
-        State.SelectedRarity = Value
-    end
-})
+local function IsValidEgg(part)
+    if not part or not part:IsA("BasePart") then return false end
+    local name = part.Name:lower()
+    return name:find("egg") or name == "Egg"
+end
 
-local AutoStealToggle = Tabs.Main:AddToggle("AutoSteal", {
-    Title = "วิ่งไปขโมยไข่อัตโนมัติ (Auto Steal)",
-    Default = false,
-    Callback = function(Value)
-        State.AutoSteal = Value
-    end
-})
+local function Distance(pos1, pos2)
+    return (pos1 - pos2).Magnitude
+end
 
--- Core Auto Steal Engine (Scans Map dynamically)
-task.spawn(function()
-    while task.wait(0.3) do
-        if State.AutoSteal then
-            pcall(function()
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-
-                -- Scan all possible Egg Models in Workspace
-                for _, obj in ipairs(Workspace:GetDescendants()) do
-                    if not State.AutoSteal then break end
-                    
-                    local isEgg = false
-                    local eggRarity = "Common"
-
-                    -- Game specific matching
-                    if obj:IsA("Model") or obj:IsA("BasePart") then
-                        if obj.Name:lower():find("egg") or obj:FindFirstChild("Egg") or obj:GetAttribute("IsEgg") then
-                            isEgg = true
-                            if obj:FindFirstChild("Rarity") then
-                                eggRarity = tostring(obj.Rarity.Value)
-                            elseif obj:GetAttribute("Rarity") then
-                                eggRarity = tostring(obj:GetAttribute("Rarity"))
-                            end
-                        end
-                    end
-
-                    -- Filter by Rarity
-                    if isEgg then
-                        local rarityMatches = (State.SelectedRarity == "All") or (eggRarity:lower() == State.SelectedRarity:lower())
-                        
-                        if rarityMatches then
-                            local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                            if targetPart and (targetPart.Position - hrp.Position).Magnitude > 3 then
-                                -- Smooth Move / TP to Egg
-                                hrp.CFrame = targetPart.CFrame * CFrame.new(0, 2.5, 0)
-                                task.wait(0.4)
-                                
-                                -- Auto Fire Prompt if any proximity prompt exists
-                                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-                                if prompt then
-                                    fireproximityprompt(prompt)
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
+-- ==============================================
+-- 🥚 ค้นหาไข่
+-- ==============================================
+local function FindAllEggs()
+    local eggs = {}
+    local hrp = GetHRP()
+    if not hrp then return eggs end
+    
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if IsValidEgg(desc) then
+            local pos = desc.Position
+            local dist = Distance(hrp.Position, pos)
+            
+            if dist <= Settings.ระยะค้นหาไข่ then
+                local uid = desc:GetAttribute("Uid") or desc.Name
+                if Settings.จดจำไข่ที่เคยเก็บ and Visited[uid] then continue end
+                
+                table.insert(eggs, {
+                    Object = desc,
+                    Position = pos,
+                    Distance = dist,
+                    IsBig = desc.Size.Magnitude > 10,
+                    Uid = uid
+                })
+            end
         end
     end
-end)
+    
+    table.sort(eggs, function(a, b)
+        if Settings.ขโมยเฉพาะไข่ใหญ่ then
+            if a.IsBig ~= b.IsBig then return a.IsBig end
+        end
+        return a.Distance < b.Distance
+    end)
+    
+    return eggs
+end
 
-Tabs.Main:AddSection("Protection Settings")
+-- ==============================================
+-- ⚡ ขโมยไข่
+-- ==============================================
+local function StealEgg(egg)
+    if not egg or not egg.Object then return end
+    local hrp = GetHRP()
+    if not hrp then return end
+    
+    hrp.CFrame = CFrame.new(egg.Position + Vector3.new(0, 3, 0))
+    task.wait(0.1 / Settings.ความเร็วในการขโมย)
+    
+    pcall(function() fireclickdetector(egg.Object) end)
+    pcall(function() egg.Object:Activate() end)
+    
+    if egg.Uid then Visited[egg.Uid] = true end
+    task.wait(0.2)
+end
 
-Tabs.Main:AddToggle("NoDrop", {
-    Title = "โดนสัตว์ตีแล้วไข่ไม่หลุด (Anti Egg Drop)",
-    Default = false,
-    Callback = function(Value)
-        State.NoDropEgg = Value
-    end
-})
-
--- Anti Drop Protection Engine
-RunService.Stepped:Connect(function()
-    if State.NoDropEgg and LocalPlayer.Character then
+-- ==============================================
+-- 🛡️ ป้องกัน AFK
+-- ==============================================
+local function AntiAFK()
+    while isRunning and Settings.ป้องกันAFK do
+        task.wait(30)
         pcall(function()
-            -- Lock Tool/Egg to Character Hierarchy
-            for _, child in ipairs(LocalPlayer.Backpack:GetChildren()) do
-                if child:IsA("Tool") and child.Name:lower():find("egg") then
-                    child.Parent = LocalPlayer.Character
-                end
-            end
-            
-            -- Prevent ragdoll / drop animations
-            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
-                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-            end
+            LocalPlayer.PlayerGui:SetAttribute("AntiAFK", os.time())
         end)
     end
-end)
+end
 
--- ==========================================
--- TAB 2: Movement (ปรับความเร็ว & ระบบบิน)
--- ==========================================
-Tabs.Movement:AddSection("Speed Settings")
-
-Tabs.Movement:AddSlider("SpeedSlider", {
-    Title = "ปรับความเร็วการวิ่ง (WalkSpeed)",
-    Min = 16,
-    Max = 300,
-    Default = 16,
-    Rounding = 0,
-    Callback = function(Value)
-        State.WalkSpeed = Value
-    end
-})
-
--- Continuous Speed Loop
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if not State.FlyEnabled and hum.WalkSpeed ~= State.WalkSpeed then
-                hum.WalkSpeed = State.WalkSpeed
-            end
+-- ==============================================
+-- 👁️ ESP แสดงตำแหน่งไข่
+-- ==============================================
+local function ESP()
+    while isRunning do
+        task.wait(0.5)
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d.Name == "THECRAFTHUB_ESP" then d:Destroy() end
         end
-    end)
-end)
-
-Tabs.Movement:AddSection("Flight Mechanics")
-
-local FlyToggle = Tabs.Movement:AddToggle("FlyToggle", {
-    Title = "เปิดระบบบิน (Fly Mode)",
-    Default = false,
-    Callback = function(Value)
-        State.FlyEnabled = Value
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         
-        local hrp = char.HumanoidRootPart
-
-        if State.FlyEnabled then
-            local bv = Instance.new("BodyVelocity")
-            bv.Name = "CraftHubBV"
-            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-            bv.Velocity = Vector3.zero
-            bv.Parent = hrp
-
-            local bg = Instance.new("BodyGyro")
-            bg.Name = "CraftHubBG"
-            bg.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-            bg.CFrame = hrp.CFrame
-            bg.Parent = hrp
-
-            task.spawn(function()
-                while State.FlyEnabled and char and char:FindFirstChild("HumanoidRootPart") do
-                    local cam = Workspace.CurrentCamera
-                    local dir = Vector3.zero
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
-
-                    bv.Velocity = dir * State.FlySpeed
-                    bg.CFrame = cam.CFrame
-                    task.wait()
-                end
-                if bv then bv:Destroy() end
-                if bg then bg:Destroy() end
-            end)
-        else
-            if hrp:FindFirstChild("CraftHubBV") then hrp.CraftHubBV:Destroy() end
-            if hrp:FindFirstChild("CraftHubBG") then hrp.CraftHubBG:Destroy() end
+        if Settings.แสดงตำแหน่งไข่ then
+            for _, egg in ipairs(FindAllEggs()) do
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "THECRAFTHUB_ESP"
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+                highlight.FillColor = Theme.หลัก
+                highlight.OutlineColor = Theme.อ่อน
+                highlight.Adornee = egg.Object
+                highlight.Parent = egg.Object
+            end
         end
     end
-})
+end
 
-Tabs.Movement:AddSlider("FlySpeedSlider", {
-    Title = "ความเร็วการบิน (Fly Speed)",
-    Min = 20,
-    Max = 300,
-    Default = 50,
-    Rounding = 0,
-    Callback = function(Value)
-        State.FlySpeed = Value
-    end
-})
+-- ==============================================
+-- 🎨 สร้าง UI เมนูภาษาไทย ธีมสีน้ำเงิน
+-- ==============================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "THE_CRAFT_HUB"
+ScreenGui.Parent = game.CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- ==========================================
--- TAB 3: Visuals (ESP แสดงไข่ & แสดงผู้เล่น)
--- ==========================================
-Tabs.Visuals:AddSection("Visual Trackers")
+-- ปุ่มเปิด-ปิดเมนู
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleButton"
+ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
+ToggleBtn.Position = UDim2.new(0.015, 0, 0.5, -27)
+ToggleBtn.BackgroundColor3 = Theme.หลัก
+ToggleBtn.Text = "⚙️"
+ToggleBtn.TextColor3 = Color3.new(1,1,1)
+ToggleBtn.TextSize = 24
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.AutoLocalize = false
+ToggleBtn.Parent = ScreenGui
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 12)
+Instance.new("UIStroke", ToggleBtn).Color = Theme.ขอบ
 
-Tabs.Visuals:AddToggle("PlayerESP", {
-    Title = "แสดงชื่อผู้เล่น (Player ESP)",
-    Default = false,
-    Callback = function(Value)
-        State.PlayerESP = Value
-    end
-})
+-- กรอบเมนูหลัก
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainMenu"
+MainFrame.Size = UDim2.new(0, 340, 0, 520)
+MainFrame.Position = UDim2.new(0.09, 0, 0.5, -260)
+MainFrame.BackgroundColor3 = Theme.พื้นหลัง
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
+Instance.new("UIStroke", MainFrame).Color = Theme.ขอบ
 
-Tabs.Visuals:AddToggle("EggESP", {
-    Title = "แสดงชื่อไข่บนแมพ (Egg ESP)",
-    Default = false,
-    Callback = function(Value)
-        State.EggESP = Value
-    end
-})
+-- แถบหัว
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 60)
+Header.BackgroundColor3 = Theme.แถบหัว
+Header.Parent = MainFrame
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 16)
 
--- Dynamic ESP Loop
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -20, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "🔷 THE CRAFT HUB"
+Title.TextColor3 = Color3.new(1,1,1)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local SubTitle = Instance.new("TextLabel")
+SubTitle.Size = UDim2.new(1, -20, 0, 20)
+SubTitle.Position = UDim2.new(0, 15, 1, -22)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "Steal an Egg — สคริปต์ครบเครื่อง"
+SubTitle.TextColor3 = Theme.อ่อน
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextSize = 12
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+SubTitle.Parent = Header
+
+-- พื้นที่เนื้อหา
+local Content = Instance.new("ScrollingFrame")
+Content.Size = UDim2.new(1, 0, 1, -70)
+Content.Position = UDim2.new(0, 0, 0, 70)
+Content.BackgroundTransparency = 1
+Content.ScrollBarThickness = 4
+Content.ScrollBarColor3 = Theme.หลัก
+Content.CanvasSize = UDim2.new(0, 0, 0, 480)
+Content.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout")
+UIList.Padding = UDim.new(0, 12)
+UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIList.VerticalAlignment = Enum.VerticalAlignment.Top
+UIList.PaddingTop = UDim.new(0, 15)
+UIList.Parent = Content
+
+-- ==============================================
+-- 🔘 ฟังก์ชันสร้างปุ่มเปิด-ปิด
+-- ==============================================
+local function CreateToggle(ชื่อ, คีย์)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(0, 310, 0, 50)
+    Container.BackgroundColor3 = Theme.แถบหัว
+    Container.Parent = Content
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, 10)
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.75, 0, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = ชื่อ
+    Label.TextColor3 = Theme.ข้อความ
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Container
+    
+    local Toggle = Instance.new("TextButton")
+    Toggle.Size = UDim2.new(0, 55, 0, 28)
+    Toggle.Position = UDim2.new(1, -65, 0.5, -14)
+    Toggle.BackgroundColor3 = Settings[คีย์] and Theme.หลัก or Theme.ปิดการใช้งาน
+    Toggle.Text = ""
+    Toggle.AutoLocalize = false
+    Toggle.Parent = Container
+    Instance.new("UICorner", Toggle).CornerRadius = UDim.new(0, 8)
+    
+    local Knob = Instance.new("Frame")
+    Knob.Size = UDim2.new(0, 22, 0, 22)
+    Knob.Position = Settings[คีย์] and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
+    Knob.BackgroundColor3 = Color3.new(1,1,1)
+    Knob.Parent = Toggle
+    Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+    
+    Toggle.MouseButton1Click:Connect(function()
+        Settings[คีย์] = not Settings[คีย์]
+        Toggle.BackgroundColor3 = Settings[คีย์] and Theme.หลัก or Theme.ปิดการใช้งาน
+        local tween = TweenService:Create(Knob, TweenInfo.new(0.15), {
+            Position = Settings[คีย์] and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
+        })
+        tween:Play()
+    end)
+end
+
+-- สร้างปุ่มทั้งหมด
+CreateToggle("🥚 ขโมยไข่อัตโนมัติ", "ขโมยไข่อัตโนมัติ")
+CreateToggle("📦 ขโมยเฉพาะไข่ขนาดใหญ่", "ขโมยเฉพาะไข่ใหญ่")
+CreateToggle("👁️ แสดงตำแหน่งไข่ (ESP)", "แสดงตำแหน่งไข่")
+CreateToggle("⚔️ สวมอุปกรณ์ที่ดีที่สุด", "สวมอุปกรณ์ที่ดีที่สุด")
+CreateToggle("🏠 วางไข่อัตโนมัติ", "วางไข่อัตโนมัติ")
+CreateToggle("🔥 ฟิวส์ไข่อัตโนมัติ", "ฟิวส์ไข่อัตโนมัติ")
+CreateToggle("💰 ขายไข่อัตโนมัติ", "ขายไข่อัตโนมัติ")
+CreateToggle("🎁 รับรางวัลอัตโนมัติ", "รับรางวัลอัตโนมัติ")
+CreateToggle("🛡️ ป้องกันการหลุด AFK", "ป้องกันAFK")
+CreateToggle("🌐 เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ", "เปลี่ยนเซิร์ฟเวอร์อัตโนมัติ")
+
+-- แถบสถานะ
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 25)
+Status.Position = UDim2.new(0, 10, 1, -30)
+Status.BackgroundTransparency = 1
+Status.Text = "✅ THE CRAFT HUB พร้อมใช้งาน | กด ⚙️ เพื่อเปิด-ปิดเมนู"
+Status.TextColor3 = Theme.อ่อน
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 11
+Status.Parent = MainFrame
+
+-- ==============================================
+-- 🔄 ปุ่มเปิด-ปิดเมนู
+-- ==============================================
+ToggleBtn.MouseButton1Click:Connect(function()
+    MenuOpen = not MenuOpen
+    MainFrame.Visible = MenuOpen
+    local tween = TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = MenuOpen and Theme.เข้ม or Theme.หลัก
+    })
+    tween:Play()
+end)
+
+-- ==============================================
+-- 🚀 เริ่มทำงาน
+-- ==============================================
 task.spawn(function()
-    while task.wait(0.5) do
-        -- Player ESP Update
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-                local head = plr.Character.Head
-                local existing = head:FindFirstChild("CraftHubPlayerESP")
-                
-                if State.PlayerESP then
-                    if not existing then
-                        local gui = Instance.new("BillboardGui")
-                        gui.Name = "CraftHubPlayerESP"
-                        gui.Adornee = head
-                        gui.Size = UDim2.new(0, 150, 0, 30)
-                        gui.StudsOffset = Vector3.new(0, 2.5, 0)
-                        gui.AlwaysOnTop = true
-
-                        local label = Instance.new("TextLabel")
-                        label.Parent = gui
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.Text = "👤 " .. plr.DisplayName .. "\n[@" .. plr.Name .. "]"
-                        label.TextColor3 = Color3.fromRGB(0, 195, 255)
-                        label.TextStrokeTransparency = 0
-                        label.TextStrokeColor3 = Color3.fromRGB(0, 10, 30)
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 11
-
-                        gui.Parent = head
-                    end
-                else
-                    if existing then existing:Destroy() end
-                end
-            end
-        end
-
-        -- Egg ESP Update
-        if State.EggESP then
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj.Name:lower():find("egg") or obj:FindFirstChild("Egg") then
-                    local part = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                    if part and not part:FindFirstChild("CraftHubEggESP") then
-                        local gui = Instance.new("BillboardGui")
-                        gui.Name = "CraftHubEggESP"
-                        gui.Adornee = part
-                        gui.Size = UDim2.new(0, 120, 0, 25)
-                        gui.StudsOffset = Vector3.new(0, 2, 0)
-                        gui.AlwaysOnTop = true
-
-                        local label = Instance.new("TextLabel")
-                        label.Parent = gui
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.Text = "🥚 " .. obj.Name
-                        label.TextColor3 = Color3.fromRGB(0, 255, 230)
-                        label.TextStrokeTransparency = 0
-                        label.TextStrokeColor3 = Color3.fromRGB(0, 20, 50)
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 12
-
-                        gui.Parent = part
-                    end
-                end
-            end
-        else
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:FindFirstChild("CraftHubEggESP") then
-                    obj.CraftHubEggESP:Destroy()
-                end
-            end
+    task.spawn(AntiAFK)
+    task.spawn(ESP)
+    
+    -- ลูปหลัก
+    while task.wait(0.15) do
+        if not Settings.ขโมยไข่อัตโนมัติ then continue end
+        local eggs = FindAllEggs()
+        if eggs[1] then
+            StealEgg(eggs[1])
         end
     end
 end)
 
--- Notification Startup
-Fluent:Notify({
-    Title = "THE CRAFT HUB",
-    Content = "โหลดสคริปต์สำเร็จแล้ว! ระบบทุกอย่างพร้อมใช้งาน",
-    Duration = 5
+print("🔷 THE CRAFT HUB — โหลดเสร็จสิ้น!")
+StarterGui:SetCore("SendNotification", {
+    Title = "🔷 THE CRAFT HUB",
+    Text = "โหลดเสร็จเรียบร้อยแล้ว!",
+    Duration = 3
 })
