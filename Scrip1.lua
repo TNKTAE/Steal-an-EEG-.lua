@@ -1,5 +1,5 @@
--- [[ THE CRAFT HUB | ALL-IN-ONE FIXED EDITION V5 ]] --
--- แก้ไขเมนูหาย + แก้ตัวแข็ง + แก้บินหลุดแมพ + แก้โดนตีไม่กระเด็น + ระบบฟาร์มไข่อัตโนมัติ
+-- [[ THE CRAFT HUB | RE-ENGINEERED ULTIMATE FIX V6 ]] --
+-- แก้ไข: ไข่เข้ามือแล้วบินกลับฐาน 100% + โดนตีไม่กระเด็นแล้วไม่เดินช้า + เก็บไข่ตกพื้นทำงานสมบูรณ์
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -7,32 +7,25 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --------------------------------------------------------------------------------
 -- GLOBAL FLAGS
 --------------------------------------------------------------------------------
 local Flags = {
-    -- Steal & Farm Modes
     AutoStealFly = false,
     AutoFarmEgg = false,
     GroundedFly = true,
     
-    -- Speed Controls
     FlySpeed = 150,
     WalkSpeed = 16,
     
-    -- Dropdown Filters (ดึงกลับมาครบถ้วน)
     FilterRarity = "ทั้งหมด",
     FilterZone = "ทุกโซน",
     FilterTier = "ทุกขนาด",
     
-    -- Automations & Fixes
     AutoReGrabFast = false,
     FastPickup = false,
     AntiKnockback = false,
-    
-    -- Visuals
     ESP_Players = false
 }
 
@@ -40,7 +33,7 @@ local ESP_Folder = Instance.new("Folder", CoreGui)
 ESP_Folder.Name = "Craft_ESP_Storage"
 
 --------------------------------------------------------------------------------
--- HELPER FUNCTIONS
+-- RELIABLE HELPERS
 --------------------------------------------------------------------------------
 local function getRoot()
     local char = LocalPlayer.Character
@@ -52,17 +45,31 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+-- ระบบเช็กไข่ในมือแบบละเอียด (กันพลาด)
 local function isHoldingEgg()
     local char = LocalPlayer.Character
-    if not char then return false end
-    for _, item in pairs(char:GetChildren()) do
-        if item:IsA("Tool") or item.Name:lower():find("egg") then
-            return true
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    
+    if char then
+        for _, item in pairs(char:GetChildren()) do
+            if item:IsA("Tool") or item.Name:lower():find("egg") or item:GetAttribute("IsEgg") then
+                return true
+            end
         end
     end
+    
+    if backpack then
+        for _, item in pairs(backpack:GetChildren()) do
+            if item.Name:lower():find("egg") or item:GetAttribute("IsEgg") then
+                return true
+            end
+        end
+    end
+    
     return false
 end
 
+-- ระบบหาตำแหน่งฐาน / จุดขายไข่
 local function getMyBaseCFrame()
     local plots = workspace:FindFirstChild("Plots") or workspace:FindFirstChild("Bases") or workspace:FindFirstChild("PlotsFolder")
     if plots then
@@ -74,29 +81,31 @@ local function getMyBaseCFrame()
             end
         end
     end
+    
     local sellZone = workspace:FindFirstChild("SellZone", true) or workspace:FindFirstChild("SellArea", true)
     if sellZone then
         local p = sellZone:IsA("Model") and (sellZone.PrimaryPart or sellZone:FindFirstChildWhichIsA("BasePart")) or sellZone
         if p then return p.CFrame end
     end
+    
     return getRoot() and getRoot().CFrame
 end
 
--- ระบบการบินแบบสมูท ไม่แข็งค้าง ไม่ตกแมพ
+-- บินไปยัง CFrame ปลายทาง
 local function flyToCFrame(targetCFrame)
     local hrp = getRoot()
     if not hrp then return end
     
     local targetPos = targetCFrame.Position
     if Flags.GroundedFly then
-        targetPos = Vector3.new(targetPos.X, math.max(targetPos.Y + 2, 3), targetPos.Z)
+        targetPos = Vector3.new(targetPos.X, math.max(targetPos.Y + 2.5, 3), targetPos.Z)
     end
     
     local destination = CFrame.new(targetPos)
     local distance = (hrp.Position - destination.Position).Magnitude
-    if distance > 3000 then return end
+    if distance > 4000 then return end
     
-    local timeToReach = math.clamp(distance / math.max(Flags.FlySpeed, 30), 0.05, 4)
+    local timeToReach = math.clamp(distance / math.max(Flags.FlySpeed, 30), 0.05, 5)
     local tweenInfo = TweenInfo.new(timeToReach, Enum.EasingStyle.Linear)
     local tween = TweenService:Create(hrp, tweenInfo, {CFrame = destination})
     
@@ -104,13 +113,13 @@ local function flyToCFrame(targetCFrame)
     tween.Completed:Wait()
 end
 
--- ระบบดูดไข่เข้ามือแบบเร็วจี๋
+-- บังคับเก็บไข่เข้ามือ (Prompt Fire Loop)
 local function forceGrabEgg(eggPart)
     local hrp = getRoot()
     if not hrp or not eggPart or not eggPart.Parent then return end
     
     local count = 0
-    while count < 6 and not isHoldingEgg() and eggPart.Parent do
+    while count < 8 and not isHoldingEgg() and eggPart.Parent do
         hrp.CFrame = eggPart.CFrame
         for _, prompt in pairs(eggPart:GetDescendants()) do
             if prompt:IsA("ProximityPrompt") then
@@ -120,33 +129,26 @@ local function forceGrabEgg(eggPart)
             end
         end
         count = count + 1
-        task.wait(0.02)
+        task.wait(0.03)
     end
 end
 
--- ตัวกรองไข่ (ความหายาก / โซน / ขนาด)
+-- ตัวกรองไข่
 local function checkEggFilter(obj)
     if not obj:IsA("BasePart") and not obj:IsA("Model") then return false end
     local name = obj.Name:lower()
     if not name:find("egg") then return false end
     
-    -- 1. เช็กความหายาก
     if Flags.FilterRarity ~= "ทั้งหมด" then
         local rarity = obj:GetAttribute("Rarity") or obj.Name
-        if not tostring(rarity):lower():find(Flags.FilterRarity:lower()) then
-            return false
-        end
+        if not tostring(rarity):lower():find(Flags.FilterRarity:lower()) then return false end
     end
     
-    -- 2. เช็กโซน
     if Flags.FilterZone ~= "ทุกโซน" then
         local parentZone = obj:FindFirstAncestorWhichIsA("Folder") or obj.Parent
-        if parentZone and not parentZone.Name:lower():find(Flags.FilterZone:lower()) then
-            return false
-        end
+        if parentZone and not parentZone.Name:lower():find(Flags.FilterZone:lower()) then return false end
     end
     
-    -- 3. เช็กขนาด
     if Flags.FilterTier ~= "ทุกขนาด" then
         local part = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
         if part then
@@ -164,7 +166,7 @@ end
 -- GUI CREATION
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CraftHubFullEditionUI"
+ScreenGui.Name = "CraftHubFullEditionUI_V6"
 ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
@@ -200,7 +202,7 @@ MainStroke.Thickness = 2
 local TitleLabel = Instance.new("TextLabel", MainFrame)
 TitleLabel.Size = UDim2.new(1, -20, 0, 40)
 TitleLabel.Position = UDim2.new(0, 15, 0, 0)
-TitleLabel.Text = "⚡ THE CRAFT HUB | ALL-IN-ONE FIXED ⚡"
+TitleLabel.Text = "⚡ THE CRAFT HUB | RE-ENGINEERED V6 ⚡"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 230, 255)
 TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
@@ -436,18 +438,24 @@ Pages[1].Visible = true
 Tabs[1].TextColor3 = Color3.fromRGB(0, 230, 255)
 
 --------------------------------------------------------------------------------
--- 1. บินขโมย & ฟาร์มไข่อัตโนมัติ (FIXED & IMPROVED)
+-- 1. บินขโมย (ไข่เข้ามือแล้วบินกลับฐาน 100%)
 --------------------------------------------------------------------------------
-addToggle(PageSteal, "ฟังก์ชันขโมยไข่ (บินไปเอาแล้วกลับฐาน)", "AutoStealFly", function(v)
+addToggle(PageSteal, "เปิดระบบขโมยไข่ (ถือไข่แล้วบินกลับฐาน)", "AutoStealFly", function(v)
     if v then
         Flags.AutoFarmEgg = false
         task.spawn(function()
             while Flags.AutoStealFly do
-                task.wait(0.2)
+                task.wait(0.15)
+                
+                -- เช็ก: ถ้ามีไข่อยู่ในมือ ให้บินกลับฐานทันที
                 if isHoldingEgg() then
                     local baseCF = getMyBaseCFrame()
-                    if baseCF then flyToCFrame(baseCF) end
+                    if baseCF then
+                        flyToCFrame(baseCF)
+                        task.wait(0.3)
+                    end
                 else
+                    -- ถ้าไม่มีไข่ ให้บินไปขโมย
                     for _, obj in pairs(workspace:GetDescendants()) do
                         if not Flags.AutoStealFly or isHoldingEgg() then break end
                         if checkEggFilter(obj) and not obj:IsDescendantOf(LocalPlayer.Character) then
@@ -464,12 +472,12 @@ addToggle(PageSteal, "ฟังก์ชันขโมยไข่ (บิน�
     end
 end)
 
-addToggle(PageSteal, "ฟังก์ชันฟาร์มไข่อัตโนมัติ (Auto Farm Eggs)", "AutoFarmEgg", function(v)
+addToggle(PageSteal, "เปิดระบบฟาร์มไข่อัตโนมัติ (Auto Farm Eggs)", "AutoFarmEgg", function(v)
     if v then
         Flags.AutoStealFly = false
         task.spawn(function()
             while Flags.AutoFarmEgg do
-                task.wait(0.2)
+                task.wait(0.15)
                 for _, obj in pairs(workspace:GetDescendants()) do
                     if not Flags.AutoFarmEgg then break end
                     if checkEggFilter(obj) and not obj:IsDescendantOf(LocalPlayer.Character) then
@@ -489,29 +497,29 @@ end)
 addToggle(PageSteal, "บินติดเรียบพื้นดิน (Grounded Fly)", "GroundedFly", function(v) Flags.GroundedFly = v end)
 
 --------------------------------------------------------------------------------
--- 2. เมนูตัวเลือกที่หายไป (ดึงกลับมาครบ 100%)
+-- 2. เมนูกรองไข่ (ครบถ้วน)
 --------------------------------------------------------------------------------
 addSelectorGrid(PageFilters, "เลือกระดับความหายากของไข่", {"ทั้งหมด", "Common", "Rare", "Epic", "Legendary", "Mythic"}, Flags.FilterRarity, function(v) Flags.FilterRarity = v end)
 addSelectorGrid(PageFilters, "เลือกโซนของไข่", {"ทุกโซน", "Zone 1", "Zone 2", "Zone 3", "VIP Zone"}, Flags.FilterZone, function(v) Flags.FilterZone = v end)
 addSelectorGrid(PageFilters, "เลือกขนาดของไข่", {"ทุกขนาด", "Small", "Medium", "Big"}, Flags.FilterTier, function(v) Flags.FilterTier = v end)
 
 --------------------------------------------------------------------------------
--- 3. ความเร็ว & กันกระเด็น & เก็บไข่ตกพื้น (FIXED SPEED BUG)
+-- 3. ความเร็ว / กันกระเด็นไม่หน่วง / เก็บไข่ตกพื้น (FIXED)
 --------------------------------------------------------------------------------
 addSlider(PagePlayer, "ปรับความเร็ววิ่ง (WalkSpeed)", 16, 500, Flags.WalkSpeed, function(v) Flags.WalkSpeed = v end)
 addSlider(PagePlayer, "ปรับความเร็วบิน (FlySpeed)", 30, 1000, Flags.FlySpeed, function(v) Flags.FlySpeed = v end)
 
--- แก้ปัญหาฟังก์ชันไข่ตกเปิดแล้ววิ่งช้า (Ultra-Fast Non-Lagging Re-Grab)
-addToggle(PagePlayer, "เก็บไข่ตกพื้นกลับเข้ามือทันที (ไม่ดื้อ/ไม่อืด)", "AutoReGrabFast", function(v)
+-- แก้ไข: ระบบเก็บไข่ตกพื้น (Auto Re-Grab) ทำงาน 100%
+addToggle(PagePlayer, "เก็บไข่ตกพื้นกลับเข้ามือทันที", "AutoReGrabFast", function(v)
     if v then
         task.spawn(function()
             while Flags.AutoReGrabFast do
-                task.wait(0.1)
+                task.wait(0.05)
                 local hrp = getRoot()
                 if hrp and not isHoldingEgg() then
-                    for _, obj in pairs(workspace:GetChildren()) do
-                        if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
-                            if (obj.Position - hrp.Position).Magnitude < 20 then
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and obj.Name:lower():find("egg") and not obj:IsDescendantOf(LocalPlayer.Character) then
+                            if (obj.Position - hrp.Position).Magnitude < 25 then
                                 forceGrabEgg(obj)
                             end
                         end
@@ -522,19 +530,15 @@ addToggle(PagePlayer, "เก็บไข่ตกพื้นกลับเข
     end
 end)
 
--- แก้โดนตีไม่กระเด็น (Anti-Knockback แบบไม่ล็อคตัวแข็ง)
-addToggle(PagePlayer, "โดนตีไม่กระเด็น (Anti-Knockback)", "AntiKnockback", function(v)
-    if v then
-        task.spawn(function()
-            while Flags.AntiKnockback do
-                task.wait(0.05)
-                local hrp = getRoot()
-                if hrp then
-                    hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-                    hrp.AssemblyAngularVelocity = Vector3.zero
-                end
-            end
-        end)
+-- แก้ไข: โดนตีไม่กระเด็น (Anti-Knockback) โดยใช้วิธีปรับ Physical Properties ไม่ทำให้ตัวละครวิ่งช้าลง
+addToggle(PagePlayer, "โดนตีไม่กระเด็น (วิ่งเร็วปกติ)", "AntiKnockback", function(v)
+    local hrp = getRoot()
+    if hrp then
+        if v then
+            hrp.CustomPhysicalProperties = PhysicalProperties.new(100, 1, 0, 1, 1)
+        else
+            hrp.CustomPhysicalProperties = nil
+        end
     end
 end)
 
@@ -598,7 +602,7 @@ addButton(PageVisuals, "🔴 ปิดระบบทั้งหมด แล�
     ScreenGui:Destroy()
 end)
 
--- ลูปคุม WalkSpeed ไม่ให้โดนเกมนับถอยหลังแก้คืน
+-- คุมความเร็ว WalkSpeed ตลอดเวลา
 RunService.Stepped:Connect(function()
     local hum = getHumanoid()
     if hum and Flags.WalkSpeed > 16 then
