@@ -1,390 +1,582 @@
--- ==============================================
---           ◌ิ THE CRAFT HUB
---   UI: สีน้ำเงินเข้ม + ดำ | เปิด-ปิดได้
--- ==============================================
+-- ==========================================
+-- THE CRAFT HUB - Fixed UI Execution Edition
+-- Theme: Dark Navy Blue & Pure Black
+-- Language: Lua
+-- ==========================================
 
--- Services
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
-local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
 local LocalPlayer = Players.LocalPlayer
 
--- Config
-local DiscordLink = "https://discord.gg/EHZ8MsKZCt"
-local HubName = "◌ิ THE CRAFT HUB"
-
--- Notification Function
-local function Notify(title, text)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = 5
-        })
-    end)
-    warn("[THE CRAFT HUB] " .. title .. ": " .. text)
-end
-
--- Load Check
-if getgenv().__THECRAFTHUB_Loaded then
-    Notify("แจ้งเตือน", "สคริปต์ทำงานอยู่แล้ว!")
-    return
-end
-getgenv().__THECRAFTHUB_Loaded = true
-
--- Data & Monsters
-local Directory = nil
-local ok, result = pcall(function()
-    return require(ReplicatedStorage:WaitForChild("Data", 20):WaitForChild("Assets", 20)).Directory
+-- ป้องกัน UI ค้าง/หาย: เลือกตำแหน่ง UI ที่ปลอดภัยที่สุดสำหรับ Executor
+local ParentGui
+pcall(function()
+    if gethui then
+        ParentGui = gethui()
+    elseif CoreGui and not pcall(function() return CoreGui.Name end) then
+        ParentGui = LocalPlayer:WaitForChild("PlayerGui")
+    else
+        ParentGui = CoreGui
+    end
 end)
+if not ParentGui then ParentGui = LocalPlayer:WaitForChild("PlayerGui") end
 
-local DefaultMonsters = {
-    {Id = "Unicorn", DisplayName = "Unicorn", RarityName = "Legendary", RarityNumber = 4, Color = Color3.fromRGB(255, 215, 90)},
-    {Id = "Kraken", DisplayName = "Kraken", RarityName = "Secret", RarityNumber = 6, Color = Color3.fromRGB(255, 60, 60)},
-    {Id = "Phoenix", DisplayName = "Phoenix", RarityName = "Mythic", RarityNumber = 5, Color = Color3.fromRGB(255, 120, 255)},
-    {Id = "Duckling", DisplayName = "Duckling", RarityName = "Common", RarityNumber = 1, Color = Color3.fromRGB(200, 200, 200)}
+-- ลบ GUI เก่าออกก่อนรันใหม่
+if ParentGui:FindFirstChild("TheCraftHubGUI") then
+    ParentGui.TheCraftHubGUI:Destroy()
+end
+
+-- ==========================================
+-- 1. CONFIG & SYSTEM VARIABLES
+-- ==========================================
+local Config = {
+    FastAttack = false,
+    AutoHoldEgg = true,
+    AutoReturnBase = true,
+
+    AutoStealEgg = false,
+    FlySpeed = 150,
+    InstantCollectEgg = true,
+
+    SelectedEgg = "All",
+    SelectedRarity = "All",
+    SelectedSize = "All",
+    SelectedZone = "All",
+
+    AutoLastZoneTree = false,
+    ESP_Eggs = false
 }
 
-local MonsterList = {}
-if ok and type(result) == "table" then
-    for k, v in pairs(result) do
-        if type(v) == "table" then
-            local Rarity = v.Rarity or {}
-            table.insert(MonsterList, {
-                Id = k,
-                DisplayName = v.DisplayName or k,
-                RarityName = Rarity.DisplayName or "Unknown",
-                RarityNumber = Rarity.RarityNumber or -1,
-                Color = Rarity.Color or Color3.fromRGB(190, 190, 195)
-            })
+local RealMapData = {
+    Eggs = {"All"},
+    Rarities = {"All", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"},
+    Sizes = {"All", "Small", "Medium", "Large", "Huge", "Gigantic"},
+    Zones = {"All"}
+}
+
+local ESP_Storage = { Egg = {} }
+local BasePosition = nil
+
+-- บันทึกพิกัดฐานแบบปลอดภัยไม่ค้าง
+local function UpdateBasePosition()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then BasePosition = hrp.CFrame end
         end
-    end
-    table.sort(MonsterList, function(a, b) return a.RarityNumber > b.RarityNumber end)
+    end)
 end
-if #MonsterList == 0 then MonsterList = DefaultMonsters end
+task.spawn(UpdateBasePosition)
 
--- Settings
-local SpawnAmount = 1
-local UI_Open = true
-local RainbowButtons = {}
+-- ==========================================
+-- 2. DYNAMIC REAL-MAP DATA SCANNER
+-- ==========================================
+local function ScanRealMapData()
+    pcall(function()
+        for _, obj in pairs(workspace:GetDescendants()) do
+            local nameLower = string.lower(obj.Name)
 
--- ==============================================
---                   CREATE UI
--- ==============================================
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "THE_CRAFT_HUB"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = PlayerGui
+            if string.find(nameLower, "egg") then
+                if not table.find(RealMapData.Eggs, obj.Name) and #obj.Name < 30 then
+                    table.insert(RealMapData.Eggs, obj.Name)
+                end
+            end
 
--- Drag Function
-local function MakeDraggable(TopBar, Frame)
-    local DragStart, InputStart, FrameStart
-    TopBar.InputBegan:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-            DragStart = Input.Position
-            FrameStart = Frame.Position
-            Input.Changed:Connect(function(Input2)
-                if Input2.UserInputState == Enum.UserInputState.End then DragStart = nil end
+            if string.find(nameLower, "zone") or string.find(nameLower, "area") or string.find(nameLower, "world") then
+                if not table.find(RealMapData.Zones, obj.Name) and #obj.Name < 30 then
+                    table.insert(RealMapData.Zones, obj.Name)
+                end
+            end
+        end
+    end)
+end
+task.spawn(ScanRealMapData)
+
+-- ==========================================
+-- 3. CORE HIGH-PERFORMANCE FUNCTIONS
+-- ==========================================
+
+-- ลอยตัวความเร็วสูง
+local function FlyToTarget(targetCFrame)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    if distance <= 3 then return end
+
+    local duration = distance / Config.FlySpeed
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    
+    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- ตีไว
+RunService.RenderStepped:Connect(function()
+    if Config.FastAttack then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    tool:Activate()
+                    if firetouchinterest and tool:FindFirstChild("Handle") then
+                        for _, obj in pairs(workspace:GetChildren()) do
+                            if obj:IsA("Model") and obj ~= char and obj:FindFirstChild("HumanoidRootPart") then
+                                firetouchinterest(tool.Handle, obj.HumanoidRootPart, 0)
+                                firetouchinterest(tool.Handle, obj.HumanoidRootPart, 1)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ขโมยไข่
+task.spawn(function()
+    while task.wait(0.05) do
+        if Config.AutoStealEgg then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if not Config.AutoStealEgg then break end
+
+                    local nameLower = string.lower(obj.Name)
+                    local isEgg = string.find(nameLower, "egg") or obj:GetAttribute("Egg")
+
+                    if isEgg then
+                        local matchEgg = (Config.SelectedEgg == "All" or string.find(obj.Name, Config.SelectedEgg))
+                        local matchRarity = (Config.SelectedRarity == "All" or string.find(nameLower, string.lower(Config.SelectedRarity)))
+                        local matchSize = (Config.SelectedSize == "All" or string.find(nameLower, string.lower(Config.SelectedSize)))
+
+                        if matchEgg and matchRarity and matchSize then
+                            local targetPart = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")))
+                            if targetPart then
+                                -- 1. ลอยไปหาไข่
+                                FlyToTarget(CFrame.new(targetPart.Position + Vector3.new(0, 2, 0)))
+
+                                -- 2. กดเก็บไว
+                                local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChild("Prompt", true)
+                                local clicker = obj:FindFirstChildOfClass("ClickDetector")
+
+                                if prompt then
+                                    prompt.HoldDuration = 0
+                                    if fireproximityprompt then fireproximityprompt(prompt) end
+                                elseif clicker and fireclickdetector then
+                                    fireclickdetector(clicker)
+                                elseif firetouchinterest then
+                                    firetouchinterest(hrp, targetPart, 0)
+                                    firetouchinterest(hrp, targetPart, 1)
+                                end
+
+                                task.wait(0.1)
+
+                                -- 3. ตรวจสอบว่าถือไข่แล้วหรือยัง
+                                local isHoldingEgg = false
+                                for _, item in pairs(char:GetChildren()) do
+                                    if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
+                                        isHoldingEgg = true
+                                    end
+                                end
+
+                                -- 4. ลอยกลับฐาน
+                                if isHoldingEgg and BasePosition then
+                                    FlyToTarget(BasePosition)
+                                end
+
+                                task.wait(0.1)
+                            end
+                        end
+                    end
+                end
             end)
         end
-    end)
-    UserInputService.InputChanged:Connect(function(Input)
-        if DragStart and Input.UserInputType == Enum.UserInputType.MouseMovement then
-            local Delta = Input.Position - DragStart
-            Frame.Position = UDim2.new(FrameStart.X.Scale, FrameStart.X.Offset + Delta.X, FrameStart.Y.Scale, FrameStart.Y.Offset + Delta.Y)
+    end
+end)
+
+-- ตีต้นไม้โซนสุดท้าย
+task.spawn(function()
+    while task.wait(0.1) do
+        if Config.AutoLastZoneTree then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                local lastZone = nil
+                local maxZoneIndex = -1
+
+                for _, zone in pairs(workspace:GetDescendants()) do
+                    if string.find(string.lower(zone.Name), "zone") or string.find(string.lower(zone.Name), "area") then
+                        local zoneNum = tonumber(string.match(zone.Name, "%d+")) or 0
+                        if zoneNum >= maxZoneIndex then
+                            maxZoneIndex = zoneNum
+                            lastZone = zone
+                        end
+                    end
+                end
+
+                local searchParent = lastZone or workspace
+
+                for _, obj in pairs(searchParent:GetDescendants()) do
+                    if not Config.AutoLastZoneTree then break end
+
+                    local nameLower = string.lower(obj.Name)
+                    local isTree = string.find(nameLower, "tree") or string.find(nameLower, "wood")
+
+                    if isTree then
+                        local targetPart = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")))
+                        if targetPart and targetPart.Parent then
+                            FlyToTarget(CFrame.new(targetPart.Position + Vector3.new(0, 2, 3)))
+
+                            while targetPart and targetPart.Parent and Config.AutoLastZoneTree do
+                                local tool = char:FindFirstChildOfClass("Tool")
+                                if tool then
+                                    tool:Activate()
+                                    if firetouchinterest and tool:FindFirstChild("Handle") then
+                                        firetouchinterest(tool.Handle, targetPart, 0)
+                                        firetouchinterest(tool.Handle, targetPart, 1)
+                                    end
+                                end
+                                task.wait(0.02)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- ดูปไข่
+local function DupeHeldEgg()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local heldEgg = nil
+        for _, item in pairs(char:GetChildren()) do
+            if item:IsA("Tool") and string.find(string.lower(item.Name), "egg") then
+                heldEgg = item
+                break
+            end
+        end
+
+        if heldEgg then
+            for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+                if remote:IsA("RemoteEvent") then
+                    local rName = string.lower(remote.Name)
+                    if string.find(rName, "egg") or string.find(rName, "dupe") or string.find(rName, "claim") then
+                        remote:FireServer(heldEgg)
+                    end
+                end
+            end
         end
     end)
 end
 
--- Toggle Button (เปิด-ปิด)
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Name = "ToggleButton"
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-ToggleBtn.Position = UDim2.new(0, 15, 0.5, -25)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(15, 23, 42) -- น้ำเงินเข้ม
-ToggleBtn.Text = "◌ิ"
-ToggleBtn.TextColor3 = Color3.fromRGB(96, 165, 250)
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 24
-ToggleBtn.AutoButtonColor = true
-ToggleBtn.Parent = ScreenGui
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 12)
+-- ==========================================
+-- 4. GUI CREATION (SAFE PARENTING)
+-- ==========================================
 
--- Main Frame
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TheCraftHubGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = ParentGui
+
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 320, 0, 550)
-MainFrame.Position = UDim2.new(0, 80, 0.5, -275)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 23, 42) -- น้ำเงินเข้ม
+MainFrame.Size = UDim2.new(0, 680, 0, 390)
+MainFrame.Position = UDim2.new(0.5, -340, 0.5, -195)
+MainFrame.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
 MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
-Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(30, 64, 175)
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(0, 102, 255)
+MainStroke.Thickness = 1.5
+MainStroke.Parent = MainFrame
 
 -- Top Bar
 local TopBar = Instance.new("Frame")
-TopBar.Name = "TopBar"
 TopBar.Size = UDim2.new(1, 0, 0, 40)
-TopBar.BackgroundColor3 = Color3.fromRGB(30, 64, 175) -- น้ำเงิน
+TopBar.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
 TopBar.Parent = MainFrame
-Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 
-local Title = Instance.new("TextLabel")
-Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(1, -45, 1, 0)
-Title.Position = UDim2.new(0, 12, 0, 0)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 15
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = HubName
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TopBar
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(0, 180, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.Text = "THE CRAFT HUB v2.0"
+TitleLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 13
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Parent = TopBar
 
 local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0, 5)
 CloseBtn.BackgroundTransparency = 1
-CloseBtn.Size = UDim2.new(0, 32, 0, 32)
-CloseBtn.Position = UDim2.new(1, -34, 0, 4)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 60, 60)
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 18
-CloseBtn.Text = "×"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 14
 CloseBtn.Parent = TopBar
 
--- Content Area
-local Content = Instance.new("ScrollingFrame")
-Content.Name = "Content"
-Content.BackgroundTransparency = 1
-Content.Position = UDim2.new(0, 0, 0, 45)
-Content.Size = UDim2.new(1, 0, 1, -45)
-Content.CanvasSize = UDim2.new(0, 0, 0, 0)
-Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Content.ScrollBarThickness = 4
-Content.ScrollBarImageColor3 = Color3.fromRGB(96, 165, 250)
-Content.Parent = MainFrame
+CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 10)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = Content
+local TabBar = Instance.new("Frame")
+TabBar.Size = UDim2.new(1, -210, 1, 0)
+TabBar.Position = UDim2.new(0, 170, 0, 0)
+TabBar.BackgroundTransparency = 1
+TabBar.Parent = TopBar
 
-local UIPadding = Instance.new("UIPadding")
-UIPadding.PaddingLeft = UDim.new(0, 12)
-UIPadding.PaddingRight = UDim.new(0, 12)
-UIPadding.PaddingTop = UDim.new(0, 12)
-UIPadding.PaddingBottom = UDim.new(0, 12)
-UIPadding.Parent = Content
+local TabListLayout = Instance.new("UIListLayout")
+TabListLayout.Parent = TabBar
+TabListLayout.FillDirection = Enum.FillDirection.Horizontal
+TabListLayout.Padding = UDim.new(0, 5)
 
--- ==============================================
---                FUNCTIONS
--- ==============================================
-local function OpenDiscord()
-    pcall(function() setclipboard(DiscordLink) end)
-    pcall(function() game:GetService("GuiService"):OpenBrowserWindowAsync(DiscordLink) end)
-    Notify("ลิงก์ถูกคัดลอก", "Discord: " .. DiscordLink)
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -24, 1, -55)
+ContentContainer.Position = UDim2.new(0, 12, 0, 48)
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Parent = MainFrame
+
+local Tabs, Pages = {}, {}
+
+local function CreateTab(tabName)
+    local TabBtn = Instance.new("TextButton")
+    TabBtn.Size = UDim2.new(0, 100, 0, 28)
+    TabBtn.Position = UDim2.new(0, 0, 0, 6)
+    TabBtn.BackgroundColor3 = Color3.fromRGB(12, 18, 30)
+    TabBtn.Text = tabName
+    TabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    TabBtn.Font = Enum.Font.GothamBold
+    TabBtn.TextSize = 10
+    TabBtn.Parent = TabBar
+
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 5)
+    TabCorner.Parent = TabBtn
+
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.ScrollBarThickness = 3
+    Page.ScrollBarImageColor3 = Color3.fromRGB(0, 102, 255)
+    Page.Parent = ContentContainer
+
+    local PageGrid = Instance.new("UIGridLayout")
+    PageGrid.CellSize = UDim2.new(0.485, 0, 0, 40)
+    PageGrid.CellPadding = UDim2.new(0.03, 0, 0, 8)
+    PageGrid.Parent = Page
+
+    PageGrid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Page.CanvasSize = UDim2.new(0, 0, 0, PageGrid.AbsoluteContentSize.Y + 15)
+    end)
+
+    TabBtn.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        for _, t in pairs(Tabs) do
+            t.TextColor3 = Color3.fromRGB(150, 150, 150)
+            t.BackgroundColor3 = Color3.fromRGB(12, 18, 30)
+        end
+        Page.Visible = true
+        TabBtn.TextColor3 = Color3.fromRGB(0, 170, 255)
+        TabBtn.BackgroundColor3 = Color3.fromRGB(20, 32, 55)
+    end)
+
+    table.insert(Tabs, TabBtn)
+    table.insert(Pages, Page)
+
+    return Page
 end
 
-local function PlacePets()
-    Notify("แจ้งเตือน", "ฟังก์ชันทำงาน! จำนวน: " .. SpawnAmount)
-    -- เพิ่มโค้ดวางไข่ที่นี่
-end
-
-local function ClearAll()
-    Notify("ล้างสำเร็จ", "ล้างสัตว์ทั้งหมดแล้ว")
-    -- เพิ่มโค้ดล้างที่นี่
-end
-
--- ==============================================
---              MENU SECTIONS
--- ==============================================
-
--- === SECTION 1: ข้อมูลระบบ ===
-local function AddSectionHeader(name)
-    local Header = Instance.new("TextLabel")
-    Header.LayoutOrder = 0
-    Header.BackgroundTransparency = 1
-    Header.Size = UDim2.new(1, 0, 0, 22)
-    Header.Font = Enum.Font.GothamBold
-    Header.TextSize = 12
-    Header.TextColor3 = Color3.fromRGB(96, 165, 250)
-    Header.Text = "▸ " .. name
-    Header.TextXAlignment = Enum.TextXAlignment.Left
-    Header.Parent = Content
-end
-
-local function AddButton(name, callback)
-    local Btn = Instance.new("TextButton")
-    Btn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
-    Btn.Size = UDim2.new(1, 0, 0, 34)
-    Btn.Font = Enum.Font.Gotham
-    Btn.TextSize = 13
-    Btn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    Btn.Text = name
-    Btn.AutoButtonColor = false
-    Btn.Parent = Content
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
-    Btn.MouseButton1Click:Connect(callback)
-    return Btn
-end
-
-local function AddAmountControl()
+local function AddToggle(parentPage, name, configKey, callback)
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, 0, 0, 36)
-    Frame.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
-    Frame.Parent = Content
-    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+    Frame.BackgroundColor3 = Color3.fromRGB(12, 16, 26)
+    Frame.Parent = parentPage
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Frame
 
     local Label = Instance.new("TextLabel")
-    Label.BackgroundTransparency = 1
-    Label.Size = UDim2.new(0, 100, 1, 0)
-    Label.Position = UDim2.new(0, 12, 0, 0)
-    Label.Font = Enum.Font.Gotham
-    Label.TextSize = 13
-    Label.TextColor3 = Color3.fromRGB(220, 220, 255)
-    Label.Text = "จำนวนวาง:"
+    Label.Size = UDim2.new(0.68, 0, 1, 0)
+    Label.Position = UDim2.new(0, 8, 0, 0)
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 9
     Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextWrapped = true
+    Label.BackgroundTransparency = 1
     Label.Parent = Frame
 
-    local Value = Instance.new("TextLabel")
-    Value.BackgroundTransparency = 1
-    Value.Size = UDim2.new(0, 30, 1, 0)
-    Value.Position = UDim2.new(0.5, -15, 0, 0)
-    Value.Font = Enum.Font.GothamBold
-    Value.TextSize = 14
-    Value.TextColor3 = Color3.fromRGB(96, 165, 250)
-    Value.Text = tostring(SpawnAmount)
-    Value.Parent = Frame
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(0, 42, 0, 22)
+    Button.Position = UDim2.new(1, -48, 0.5, -11)
+    Button.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 122, 255) or Color3.fromRGB(30, 35, 50)
+    Button.Text = Config[configKey] and "ON" or "OFF"
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 9
+    Button.Parent = Frame
 
-    local Minus = Instance.new("TextButton")
-    Minus.Size = UDim2.new(0, 32, 1, -6)
-    Minus.Position = UDim2.new(0, 10, 0, 3)
-    Minus.BackgroundColor3 = Color3.fromRGB(51, 65, 85)
-    Minus.Font = Enum.Font.GothamBold
-    Minus.TextSize = 16
-    Minus.Text = "-"
-    Minus.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Minus.Parent = Frame
-    Instance.new("UICorner", Minus).CornerRadius = UDim.new(0, 6)
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 4)
+    BtnCorner.Parent = Button
 
-    local Plus = Instance.new("TextButton")
-    Plus.Size = UDim2.new(0, 32, 1, -6)
-    Plus.Position = UDim2.new(1, -42, 0, 3)
-    Plus.BackgroundColor3 = Color3.fromRGB(51, 65, 85)
-    Plus.Font = Enum.Font.GothamBold
-    Plus.TextSize = 16
-    Plus.Text = "+"
-    Plus.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Plus.Parent = Frame
-    Instance.new("UICorner", Plus).CornerRadius = UDim.new(0, 6)
-
-    Minus.MouseButton1Click:Connect(function()
-        SpawnAmount = math.max(1, SpawnAmount - 1)
-        Value.Text = tostring(SpawnAmount)
-    end)
-    Plus.MouseButton1Click:Connect(function()
-        SpawnAmount = math.min(5, SpawnAmount + 1)
-        Value.Text = tostring(SpawnAmount)
+    Button.MouseButton1Click:Connect(function()
+        Config[configKey] = not Config[configKey]
+        Button.Text = Config[configKey] and "ON" or "OFF"
+        Button.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 122, 255) or Color3.fromRGB(30, 35, 50)
+        if callback then callback(Config[configKey]) end
     end)
 end
 
-local function AddMonsterGrid()
-    AddSectionHeader("รายการสัตว์/ไข่")
-    
-    local GridFrame = Instance.new("Frame")
-    GridFrame.Size = UDim2.new(1, 0, 0, 0)
-    GridFrame.AutomaticSize = Enum.AutomaticSize.Y
-    GridFrame.BackgroundTransparency = 1
-    GridFrame.Parent = Content
+local function AddButton(parentPage, name, callback)
+    local Button = Instance.new("TextButton")
+    Button.BackgroundColor3 = Color3.fromRGB(15, 22, 36)
+    Button.Text = name
+    Button.TextColor3 = Color3.fromRGB(0, 170, 255)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 9
+    Button.TextWrapped = true
+    Button.Parent = parentPage
 
-    local Grid = Instance.new("UIGridLayout")
-    Grid.CellSize = UDim2.new(0, 80, 0, 90)
-    Grid.CellPadding = UDim2.new(0, 6, 0, 6)
-    Grid.Parent = GridFrame
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Button
 
-    for _, v in ipairs(MonsterList) do
-        local Btn = Instance.new("TextButton")
-        Btn.Size = UDim2.new(0, 80, 0, 90)
-        Btn.BackgroundColor3 = v.Color
-        Btn.Text = ""
-        Btn.AutoButtonColor = true
-        Btn.Parent = GridFrame
-        Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(0, 80, 180)
+    Stroke.Thickness = 1
+    Stroke.Parent = Button
 
-        local Name = Instance.new("TextLabel")
-        Name.BackgroundTransparency = 1
-        Name.Size = UDim2.new(1, -6, 0, 28)
-        Name.Position = UDim2.new(0, 3, 0, 58)
-        Name.Font = Enum.Font.GothamBold
-        Name.TextSize = 10
-        Name.TextColor3 = Color3.fromRGB(255, 255, 255)
-        Name.Text = v.DisplayName
-        Name.TextWrapped = true
-        Name.Parent = Btn
-
-        if v.RarityName == "Rainbow" then
-            table.insert(RainbowButtons, Btn)
-        end
-
-        Btn.MouseButton1Click:Connect(function()
-            Notify("เลือก", "เลือก " .. v.DisplayName)
-        end)
-    end
+    Button.MouseButton1Click:Connect(callback)
 end
 
--- === BUILD MENU ===
-AddSectionHeader("📋 ข้อมูลระบบ")
-local Info = Instance.new("TextLabel")
-Info.Size = UDim2.new(1, 0, 0, 40)
-Info.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
-Info.Font = Enum.Font.Gotham
-Info.TextSize = 11
-Info.TextColor3 = Color3.fromRGB(180, 180, 200)
-Info.Text = "สถานะ: พร้อมใช้งาน\nสัตว์ทั้งหมด: " .. #MonsterList .. " ชนิด"
-Info.TextXAlignment = Enum.TextXAlignment.Left
-Info.TextYAlignment = Enum.TextYAlignment.Top
-Info.Parent = Content
-Instance.new("UICorner", Info).CornerRadius = UDim.new(0, 8)
+local function AddDropdown(parentPage, name, dataTable, configKey)
+    local Frame = Instance.new("Frame")
+    Frame.BackgroundColor3 = Color3.fromRGB(12, 16, 26)
+    Frame.Parent = parentPage
 
-AddMonsterGrid()
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Frame
 
-AddSectionHeader("⚙️ การตั้งค่า")
-AddAmountControl()
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.45, 0, 1, 0)
+    Label.Position = UDim2.new(0, 8, 0, 0)
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 9
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextWrapped = true
+    Label.BackgroundTransparency = 1
+    Label.Parent = Frame
 
-AddSectionHeader("🎮 การทำงาน")
-AddButton("📍 วางสัตว์ที่เลือก", PlacePets)
-AddButton("🗑️ ล้างสัตว์ทั้งหมด", ClearAll)
-AddButton("🔗 เข้าร่วม Discord", OpenDiscord)
+    local DropBtn = Instance.new("TextButton")
+    DropBtn.Size = UDim2.new(0.5, 0, 0, 22)
+    DropBtn.Position = UDim2.new(0.47, 0, 0.5, -11)
+    DropBtn.BackgroundColor3 = Color3.fromRGB(20, 26, 40)
+    DropBtn.Text = tostring(Config[configKey])
+    DropBtn.TextColor3 = Color3.fromRGB(0, 170, 255)
+    DropBtn.Font = Enum.Font.GothamBold
+    DropBtn.TextSize = 9
+    DropBtn.Parent = Frame
 
--- ==============================================
---              TOGGLE SHOW/HIDE
--- ==============================================
-ToggleBtn.MouseButton1Click:Connect(function()
-    UI_Open = not UI_Open
-    MainFrame.Visible = UI_Open
-    ToggleBtn.BackgroundColor3 = UI_Open and Color3.fromRGB(30, 64, 175) or Color3.fromRGB(15, 23, 42)
+    local DropCorner = Instance.new("UICorner")
+    DropCorner.CornerRadius = UDim.new(0, 4)
+    DropCorner.Parent = DropBtn
+
+    local currentIndex = 1
+    DropBtn.MouseButton1Click:Connect(function()
+        currentIndex = currentIndex + 1
+        if currentIndex > #dataTable then currentIndex = 1 end
+        Config[configKey] = dataTable[currentIndex]
+        DropBtn.Text = tostring(Config[configKey])
+    end)
+end
+
+-- Create Pages
+local PlayerPage = CreateTab("PLAYER")
+local EggPage = CreateTab("STEAL EGGS")
+local EventPage = CreateTab("EVENT TREE")
+
+-- Add Features
+AddToggle(PlayerPage, "Ultra Fast Attack", "FastAttack")
+AddButton(PlayerPage, "Dupe Held Egg", DupeHeldEgg)
+AddToggle(PlayerPage, "Auto Hold Egg", "AutoHoldEgg")
+
+AddToggle(EggPage, "Fly Steal Egg", "AutoStealEgg")
+AddToggle(EggPage, "Instant Collect", "InstantCollectEgg")
+AddToggle(EggPage, "Return Base", "AutoReturnBase")
+AddButton(EggPage, "Set Base Pos", function() UpdateBasePosition() end)
+
+AddDropdown(EggPage, "Egg Filter:", RealMapData.Eggs, "SelectedEgg")
+AddDropdown(EggPage, "Rarity Filter:", RealMapData.Rarities, "SelectedRarity")
+AddDropdown(EggPage, "Size Filter:", RealMapData.Sizes, "SelectedSize")
+AddDropdown(EggPage, "Zone Filter:", RealMapData.Zones, "SelectedZone")
+
+AddToggle(EventPage, "Farm Last Zone Tree", "AutoLastZoneTree")
+
+-- Activate First Tab
+Tabs[1].TextColor3 = Color3.fromRGB(0, 170, 255)
+Tabs[1].BackgroundColor3 = Color3.fromRGB(20, 32, 55)
+Pages[1].Visible = true
+
+-- Floating Toggle Button (ปุ่มลอยซ้ายมือ)
+local ToggleGuiBtn = Instance.new("TextButton")
+ToggleGuiBtn.Name = "ToggleCraftHub"
+ToggleGuiBtn.Size = UDim2.new(0, 45, 0, 45)
+ToggleGuiBtn.Position = UDim2.new(0, 15, 0.25, 0)
+ToggleGuiBtn.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
+ToggleGuiBtn.Text = "HUB"
+ToggleGuiBtn.TextColor3 = Color3.fromRGB(0, 170, 255)
+ToggleGuiBtn.Font = Enum.Font.GothamBold
+ToggleGuiBtn.TextSize = 12
+ToggleGuiBtn.Active = true
+ToggleGuiBtn.Draggable = true
+ToggleGuiBtn.Parent = ScreenGui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 10)
+ToggleCorner.Parent = ToggleGuiBtn
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Color = Color3.fromRGB(0, 102, 255)
+ToggleStroke.Thickness = 2
+ToggleStroke.Parent = ToggleGuiBtn
+
+ToggleGuiBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
 end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    UI_Open = false
-    MainFrame.Visible = false
-end)
-
-MakeDraggable(TopBar, MainFrame)
-
--- Rainbow Animation
-RunService.Heartbeat:Connect(function()
-    for _, Btn in ipairs(RainbowButtons) do
-        if Btn.Parent then
-            Btn.BackgroundColor3 = Color3.fromHSV(os.clock() * 0.15 % 1, 0.85, 1)
-        end
-    end
-end)
-
--- ==============================================
---                  LOADED
--- ==============================================
-Notify("◌ิ THE CRAFT HUB", "โหลดเสร็จสิ้น! กดปุ่ม ◌ิ เพื่อเปิด/ปิด")
-print("[THE CRAFT HUB] ✅ Loaded successfully!")
+-- แจ้งเตือนใน Console/Chat ว่าโหลดสำเร็จ
+print("---------------------------------------")
+print("[THE CRAFT HUB] Script Loaded Successfully!")
+print("Look for the 'HUB' button on the left side of your screen.")
+print("---------------------------------------")
