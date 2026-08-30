@@ -1,7 +1,8 @@
 --[[
     THE CRAFT HUB - สคริปต์อเนกประสงค์
-    UI แนวนอนสวยงาม
+    UI แนวนอน สวยงาม
     มีปุ่มเปิด/ปิด Script และ UI
+    แก้ไขให้ทำงานทันที
 ]]
 
 -- ==================== Services ====================
@@ -22,16 +23,18 @@ local Translations = {
         title = "THE CRAFT HUB",
         script_on = "สคริปต์: เปิด",
         script_off = "สคริปต์: ปิด",
-        ui_on = "UI: เปิด",
-        ui_off = "UI: ปิด",
+        ui_show = "แสดง UI",
+        ui_hide = "ซ่อน UI",
         toggle_on = "ON",
         toggle_off = "OFF",
-        category_event = "⚡ อีเว้น",
-        category_steal = "🥚 ขโมยไข่",
-        category_esp = "👁️ ESP",
-        category_movement = "🏃 เคลื่อนไหว",
-        category_combat = "⚔️ ต่อสู้",
-        category_server = "🌐 เซิฟเวอร์",
+        -- หมวดหมู่
+        cat_event = "อีเว้น",
+        cat_steal = "ขโมยไข่",
+        cat_esp = "มองทะลุ",
+        cat_move = "เคลื่อนไหว",
+        cat_combat = "ต่อสู้",
+        cat_server = "เซิฟเวอร์",
+        -- ฟีเจอร์
         feat_auto_tree = "ตีต้นไม้ Auto",
         feat_steal_monster = "ขโมยไข่ Monster",
         feat_loot_treadmill = "เสกลู่วิ่ง",
@@ -51,8 +54,6 @@ local Translations = {
         jump_label = "พลังกระโดด",
         btn_server_hop = "ย้ายเซิฟ",
         btn_clear_esp = "ล้าง ESP",
-        btn_refresh_zone = "รีเฟรชโซน",
-        zone_label = "โซน: ",
         no_zones = "ไม่พบโซน",
         zones_found = "พบโซน: ",
         esp_cleared = "ล้าง ESP แล้ว",
@@ -62,16 +63,16 @@ local Translations = {
         title = "THE CRAFT HUB",
         script_on = "Script: ON",
         script_off = "Script: OFF",
-        ui_on = "UI: ON",
-        ui_off = "UI: OFF",
+        ui_show = "Show UI",
+        ui_hide = "Hide UI",
         toggle_on = "ON",
         toggle_off = "OFF",
-        category_event = "⚡ Event",
-        category_steal = "🥚 Egg Steal",
-        category_esp = "👁️ ESP",
-        category_movement = "🏃 Movement",
-        category_combat = "⚔️ Combat",
-        category_server = "🌐 Server",
+        cat_event = "Event",
+        cat_steal = "Egg Steal",
+        cat_esp = "ESP",
+        cat_move = "Movement",
+        cat_combat = "Combat",
+        cat_server = "Server",
         feat_auto_tree = "Auto Tree",
         feat_steal_monster = "Steal Monster Egg",
         feat_loot_treadmill = "Loot Treadmill",
@@ -91,8 +92,6 @@ local Translations = {
         jump_label = "Jump Power",
         btn_server_hop = "Server Hop",
         btn_clear_esp = "Clear ESP",
-        btn_refresh_zone = "Refresh Zones",
-        zone_label = "Zone: ",
         no_zones = "No zones",
         zones_found = "Zones: ",
         esp_cleared = "ESP Cleared",
@@ -122,38 +121,35 @@ local Settings = {
     InfiniteJump = false,
     FastAttack = false,
     NoKnockback = false,
-    SelectedZone = "",
 }
 
 local ESPObjects = {}
-local ZoneList = {}
 local IsStealing = false
 local BasePosition = nil
-local Connections = {}
-local LoopConnections = {}
+local RunningLoops = {}
 
 -- ==================== ฟังก์ชันช่วยเหลือ ====================
-local function GetCharacter()
+local function GetChar()
     return LocalPlayer.Character
 end
 
 local function GetHumanoid()
-    local char = GetCharacter()
+    local char = GetChar()
     if char then
         return char:FindFirstChildOfClass("Humanoid")
     end
     return nil
 end
 
-local function GetRootPart()
-    local char = GetCharacter()
+local function GetRoot()
+    local char = GetChar()
     if char then
         return char:FindFirstChild("HumanoidRootPart")
     end
     return nil
 end
 
-local function GetObjectPosition(obj)
+local function GetObjPos(obj)
     if not obj then return nil end
     if obj:IsA("Model") then
         if obj:FindFirstChild("HumanoidRootPart") then
@@ -170,7 +166,7 @@ local function GetObjectPosition(obj)
     return nil
 end
 
-local function FindInWorkspace(name)
+local function FindObj(name)
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj.Name == name then
             return obj
@@ -179,9 +175,9 @@ local function FindInWorkspace(name)
     return nil
 end
 
-local function HasChild(parent, childName)
-    if not parent then return false end
-    for _, child in pairs(parent:GetChildren()) do
+local function HasChild(obj, childName)
+    if not obj then return false end
+    for _, child in pairs(obj:GetChildren()) do
         if child.Name == childName then
             return true
         end
@@ -189,40 +185,27 @@ local function HasChild(parent, childName)
     return false
 end
 
-local function PressKey(key, holdTime)
-    holdTime = holdTime or 0.05
-    VirtualInputManager:SendKeyEvent(true, key, false, nil)
-    task.wait(holdTime)
-    VirtualInputManager:SendKeyEvent(false, key, false, nil)
+local function PressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+    task.wait(0.08)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
 end
 
-local function MoveToPosition(position)
+local function MoveTo(pos)
     local humanoid = GetHumanoid()
-    if not humanoid then return end
-    humanoid:MoveTo(position)
-end
-
-local function TweenToPosition(position, speed)
-    local rootPart = GetRootPart()
-    if not rootPart then return end
-    
-    local tween = TweenService:Create(rootPart, 
-        TweenInfo.new(1, Enum.EasingStyle.Linear), 
-        {CFrame = CFrame.new(position)}
-    )
-    tween:Play()
-    tween.Completed:Wait()
+    if humanoid and pos then
+        humanoid:MoveTo(pos)
+    end
 end
 
 -- ==================== ฟังก์ชันหลัก ====================
 
--- ตีต้นไม้อัตโนมัติ
+-- ตีต้นไม้
 local function AutoTreeLoop()
     while Settings.AutoTree and Settings.ScriptEnabled do
         task.wait(0.5)
-        local char = GetCharacter()
-        local rootPart = GetRootPart()
-        if char and rootPart then
+        local root = GetRoot()
+        if root then
             local trees = {}
             for _, obj in pairs(Workspace:GetDescendants()) do
                 if obj.Name == "small" or obj.Name:lower():find("small") then
@@ -233,9 +216,9 @@ local function AutoTreeLoop()
             local nearest = nil
             local minDist = math.huge
             for _, tree in pairs(trees) do
-                local pos = GetObjectPosition(tree)
+                local pos = GetObjPos(tree)
                 if pos then
-                    local dist = (pos - rootPart.Position).Magnitude
+                    local dist = (pos - root.Position).Magnitude
                     if dist < minDist then
                         minDist = dist
                         nearest = tree
@@ -244,18 +227,21 @@ local function AutoTreeLoop()
             end
             
             if nearest then
-                local pos = GetObjectPosition(nearest)
-                if pos and minDist > 5 then
-                    MoveToPosition(pos)
-                    task.wait(0.3)
-                elseif pos then
-                    local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        tool:Activate()
-                        task.wait(0.1)
-                        tool:Deactivate()
+                local pos = GetObjPos(nearest)
+                if pos then
+                    if minDist > 5 then
+                        MoveTo(pos)
+                        task.wait(0.3)
                     else
-                        PressKey(Enum.KeyCode.E, 0.1)
+                        local char = GetChar()
+                        local tool = char and char:FindFirstChildOfClass("Tool")
+                        if tool then
+                            tool:Activate()
+                            task.wait(0.1)
+                            tool:Deactivate()
+                        else
+                            PressE()
+                        end
                     end
                 end
             end
@@ -267,21 +253,19 @@ end
 local function StealMonsterLoop()
     while Settings.StealMonster and Settings.ScriptEnabled do
         task.wait(1)
-        local rootPart = GetRootPart()
-        if rootPart then
-            local found = false
+        local root = GetRoot()
+        if root then
             for _, obj in pairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") and HasChild(obj, "MonsterParasiteVisual") then
-                    local pos = GetObjectPosition(obj)
+                    local pos = GetObjPos(obj)
                     if pos then
-                        MoveToPosition(pos)
+                        MoveTo(pos)
                         task.wait(0.5)
-                        PressKey(Enum.KeyCode.E, 0.1)
+                        PressE()
                         if Settings.AntiDrop then
                             task.wait(0.3)
-                            PressKey(Enum.KeyCode.E, 0.1)
+                            PressE()
                         end
-                        found = true
                         break
                     end
                 end
@@ -294,13 +278,13 @@ end
 local function LootTreadmillLoop()
     while Settings.LootTreadmill and Settings.ScriptEnabled do
         task.wait(0.5)
-        local treadmill = FindInWorkspace("AdminTreadmill")
+        local treadmill = FindObj("AdminTreadmill")
         if treadmill then
-            local pos = GetObjectPosition(treadmill)
+            local pos = GetObjPos(treadmill)
             if pos then
-                MoveToPosition(pos)
+                MoveTo(pos)
                 task.wait(0.3)
-                PressKey(Enum.KeyCode.E, 0.1)
+                PressE()
             end
         end
     end
@@ -310,18 +294,18 @@ end
 local function StealFXLoop()
     while Settings.StealFX and Settings.ScriptEnabled do
         task.wait(1)
-        local rootPart = GetRootPart()
-        if rootPart then
+        local root = GetRoot()
+        if root then
             for _, obj in pairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") and HasChild(obj, "FX") then
-                    local pos = GetObjectPosition(obj)
+                    local pos = GetObjPos(obj)
                     if pos then
-                        MoveToPosition(pos)
+                        MoveTo(pos)
                         task.wait(0.5)
-                        PressKey(Enum.KeyCode.E, 0.1)
+                        PressE()
                         if Settings.AntiDrop then
                             task.wait(0.3)
-                            PressKey(Enum.KeyCode.E, 0.1)
+                            PressE()
                         end
                         break
                     end
@@ -336,10 +320,10 @@ local function AutoStealLoop()
     while Settings.AutoSteal and Settings.ScriptEnabled do
         task.wait(1)
         if not IsStealing then
-            local rootPart = GetRootPart()
-            if rootPart then
+            local root = GetRoot()
+            if root then
                 if not BasePosition then
-                    BasePosition = rootPart.Position
+                    BasePosition = root.Position
                 end
                 
                 local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
@@ -350,9 +334,9 @@ local function AutoStealLoop()
                     
                     for _, egg in pairs(eggs) do
                         if egg:IsA("Model") then
-                            local pos = GetObjectPosition(egg)
+                            local pos = GetObjPos(egg)
                             if pos then
-                                local dist = (pos - rootPart.Position).Magnitude
+                                local dist = (pos - root.Position).Magnitude
                                 if dist < minDist then
                                     minDist = dist
                                     nearest = egg
@@ -363,27 +347,26 @@ local function AutoStealLoop()
                     
                     if nearest then
                         IsStealing = true
-                        local eggPos = GetObjectPosition(nearest)
+                        local eggPos = GetObjPos(nearest)
                         if eggPos then
-                            MoveToPosition(eggPos)
+                            MoveTo(eggPos)
                             task.wait(0.5)
-                            PressKey(Enum.KeyCode.E, 0.1)
+                            PressE()
                             
                             if Settings.AntiDrop then
                                 task.wait(0.2)
-                                PressKey(Enum.KeyCode.E, 0.1)
+                                PressE()
                             end
                             
                             if Settings.FastPickup then
                                 task.wait(0.15)
-                                PressKey(Enum.KeyCode.E, 0.1)
+                                PressE()
                             end
                             
                             task.wait(1)
                             
-                            -- กลับฐาน
                             if BasePosition then
-                                MoveToPosition(BasePosition)
+                                MoveTo(BasePosition)
                                 task.wait(0.5)
                             end
                         end
@@ -451,14 +434,21 @@ end
 
 -- กระโดดไม่จำกัด
 local function EnableInfiniteJump()
-    local char = GetCharacter()
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
-            humanoid.JumpPower = Settings.JumpPower
+    spawn(function()
+        while Settings.InfiniteJump and Settings.ScriptEnabled do
+            task.wait(0.1)
+            local humanoid = GetHumanoid()
+            if humanoid then
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+                humanoid.JumpPower = Settings.JumpPower
+            end
         end
-    end
+        -- คืนค่าเมื่อปิด
+        local humanoid = GetHumanoid()
+        if humanoid then
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
+        end
+    end)
 end
 
 -- ตีไว
@@ -466,10 +456,10 @@ local function EnableFastAttack()
     spawn(function()
         while Settings.FastAttack and Settings.ScriptEnabled do
             task.wait(0.05)
-            local char = GetCharacter()
+            local char = GetChar()
             if char then
                 local tool = char:FindFirstChildOfClass("Tool")
-                if tool and tool:IsA("Tool") then
+                if tool then
                     tool:Activate()
                     task.wait(0.02)
                     tool:Deactivate()
@@ -484,7 +474,7 @@ local function EnableNoKnockback()
     spawn(function()
         while Settings.NoKnockback and Settings.ScriptEnabled do
             task.wait(0.1)
-            local char = GetCharacter()
+            local char = GetChar()
             if char then
                 for _, part in pairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
@@ -498,44 +488,23 @@ end
 
 -- ย้ายเซิฟ
 local function HopServer()
-    local servers = {}
     pcall(function()
         local Http = game:GetService("HttpService")
         local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
         local response = Http:JSONDecode(game:HttpGet(url))
+        local servers = {}
         for _, server in pairs(response.data) do
             if server.playing < server.maxPlayers then
                 table.insert(servers, server.id)
             end
         end
-    end)
-    
-    if #servers > 0 then
-        local randomServer = servers[math.random(1, #servers)]
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, randomServer, LocalPlayer)
-    else
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end
-end
-
--- รีเฟรชโซน
-local function RefreshZones()
-    ZoneList = {}
-    local objectsFolder = Workspace:FindFirstChild("__OBJECTS")
-    if objectsFolder then
-        local areasFolder = objectsFolder:FindFirstChild("Areas")
-        if areasFolder then
-            for _, area in pairs(areasFolder:GetChildren()) do
-                table.insert(ZoneList, area.Name)
-            end
+        if #servers > 0 then
+            local randomServer = servers[math.random(1, #servers)]
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, randomServer, LocalPlayer)
+        else
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
         end
-    end
-    
-    if #ZoneList > 0 then
-        print(Lang.zones_found .. table.concat(ZoneList, ", "))
-    else
-        print(Lang.no_zones)
-    end
+    end)
 end
 
 -- สร้าง ESP
@@ -578,38 +547,38 @@ function ClearESP()
     ESPObjects = {}
 end
 
--- ==================== สร้าง UI แนวนอน ====================
+-- ==================== สร้าง UI ====================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "THE_CRAFT_HUB_UI"
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- ปุ่มหลักเปิด/ปิด UI
-local MainToggleButton = Instance.new("TextButton")
-MainToggleButton.Size = UDim2.new(0, 50, 0, 50)
-MainToggleButton.Position = UDim2.new(0, 10, 0.5, -25)
-MainToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-MainToggleButton.Text = "🎮"
-MainToggleButton.TextSize = 25
-MainToggleButton.BorderSizePixel = 0
-MainToggleButton.Parent = ScreenGui
+-- ปุ่มเปิด/ปิด UI (ลอยอยู่ตลอด)
+local ToggleUIButton = Instance.new("TextButton")
+ToggleUIButton.Size = UDim2.new(0, 45, 0, 45)
+ToggleUIButton.Position = UDim2.new(0, 10, 0.5, -22)
+ToggleUIButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+ToggleUIButton.Text = "🎮"
+ToggleUIButton.TextSize = 22
+ToggleUIButton.BorderSizePixel = 0
+ToggleUIButton.Parent = ScreenGui
 
-local MainToggleCorner = Instance.new("UICorner")
-MainToggleCorner.CornerRadius = UDim.new(0, 10)
-MainToggleCorner.Parent = MainToggleButton
+local ToggleUICorner = Instance.new("UICorner")
+ToggleUICorner.CornerRadius = UDim.new(0, 10)
+ToggleUICorner.Parent = ToggleUIButton
 
--- Main Panel (แนวนอน)
+-- Main Panel
 local MainPanel = Instance.new("Frame")
-MainPanel.Size = UDim2.new(0, 800, 0, 300)
-MainPanel.Position = UDim2.new(0.5, -400, 0.5, -150)
-MainPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+MainPanel.Size = UDim2.new(0, 750, 0, 280)
+MainPanel.Position = UDim2.new(0.5, -375, 0.5, -140)
+MainPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
 MainPanel.BorderSizePixel = 0
 MainPanel.Visible = true
 MainPanel.Parent = ScreenGui
 
 local PanelCorner = Instance.new("UICorner")
-PanelCorner.CornerRadius = UDim.new(0, 12)
+PanelCorner.CornerRadius = UDim.new(0, 10)
 PanelCorner.Parent = MainPanel
 
 local PanelStroke = Instance.new("UIStroke")
@@ -617,88 +586,72 @@ PanelStroke.Color = Color3.fromRGB(0, 150, 255)
 PanelStroke.Thickness = 2
 PanelStroke.Parent = MainPanel
 
--- Title Bar แนวนอน
+-- Title Bar
 local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 45)
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
 TitleBar.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainPanel
 
 local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 12)
+TitleCorner.CornerRadius = UDim.new(0, 10)
 TitleCorner.Parent = TitleBar
 
 local TitleBottom = Instance.new("Frame")
-TitleBottom.Size = UDim2.new(1, 0, 0, 15)
+TitleBottom.Size = UDim2.new(1, 0, 0, 10)
 TitleBottom.Position = UDim2.new(0, 0, 0, 30)
 TitleBottom.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
 TitleBottom.BorderSizePixel = 0
 TitleBottom.Parent = TitleBar
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.Size = UDim2.new(0.4, 0, 1, 0)
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = Lang.title
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 TitleLabel.Font = Enum.Font.GothamBlack
-TitleLabel.TextSize = 18
+TitleLabel.TextSize = 16
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
 
 -- ปุ่ม Script On/Off
 local ScriptToggle = Instance.new("TextButton")
-ScriptToggle.Size = UDim2.new(0, 80, 0, 30)
-ScriptToggle.Position = UDim2.new(1, -200, 0, 7)
+ScriptToggle.Size = UDim2.new(0, 90, 0, 28)
+ScriptToggle.Position = UDim2.new(1, -220, 0, 6)
 ScriptToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
 ScriptToggle.Text = Lang.script_on
 ScriptToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
 ScriptToggle.Font = Enum.Font.GothamBold
-ScriptToggle.TextSize = 11
+ScriptToggle.TextSize = 10
 ScriptToggle.BorderSizePixel = 0
 ScriptToggle.Parent = TitleBar
 
 local ScriptToggleCorner = Instance.new("UICorner")
-ScriptToggleCorner.CornerRadius = UDim.new(0, 15)
+ScriptToggleCorner.CornerRadius = UDim.new(0, 14)
 ScriptToggleCorner.Parent = ScriptToggle
-
--- ปุ่ม UI On/Off
-local UIToggle = Instance.new("TextButton")
-UIToggle.Size = UDim2.new(0, 70, 0, 30)
-UIToggle.Position = UDim2.new(1, -110, 0, 7)
-UIToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-UIToggle.Text = Lang.ui_on
-UIToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-UIToggle.Font = Enum.Font.GothamBold
-UIToggle.TextSize = 11
-UIToggle.BorderSizePixel = 0
-UIToggle.Parent = TitleBar
-
-local UIToggleCorner = Instance.new("UICorner")
-UIToggleCorner.CornerRadius = UDim.new(0, 15)
-UIToggleCorner.Parent = UIToggle
 
 -- ปุ่มปิด Panel
 local ClosePanel = Instance.new("TextButton")
-ClosePanel.Size = UDim2.new(0, 30, 0, 30)
-ClosePanel.Position = UDim2.new(1, -35, 0, 7)
+ClosePanel.Size = UDim2.new(0, 28, 0, 28)
+ClosePanel.Position = UDim2.new(1, -34, 0, 6)
 ClosePanel.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 ClosePanel.Text = "✕"
 ClosePanel.TextColor3 = Color3.fromRGB(255, 255, 255)
 ClosePanel.Font = Enum.Font.GothamBold
-ClosePanel.TextSize = 14
+ClosePanel.TextSize = 13
 ClosePanel.BorderSizePixel = 0
 ClosePanel.Parent = TitleBar
 
 local ClosePanelCorner = Instance.new("UICorner")
-ClosePanelCorner.CornerRadius = UDim.new(0, 5)
+ClosePanelCorner.CornerRadius = UDim.new(0, 14)
 ClosePanelCorner.Parent = ClosePanel
 
--- Tab Bar แนวนอน
+-- Tab Bar (ด้านซ้ายแนวตั้ง)
 local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(0, 150, 1, -45)
-TabBar.Position = UDim2.new(0, 0, 0, 45)
-TabBar.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+TabBar.Size = UDim2.new(0, 130, 1, -40)
+TabBar.Position = UDim2.new(0, 0, 0, 40)
+TabBar.BackgroundColor3 = Color3.fromRGB(18, 18, 32)
 TabBar.BorderSizePixel = 0
 TabBar.Parent = MainPanel
 
@@ -707,26 +660,31 @@ TabList.Padding = UDim.new(0, 2)
 TabList.SortOrder = Enum.SortOrder.LayoutOrder
 TabList.Parent = TabBar
 
+local TabPadding = Instance.new("UIPadding")
+TabPadding.PaddingTop = UDim.new(0, 5)
+TabPadding.PaddingLeft = UDim.new(0, 5)
+TabPadding.PaddingRight = UDim.new(0, 5)
+TabPadding.Parent = TabBar
+
 -- Content Area
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -150, 1, -45)
-ContentArea.Position = UDim2.new(0, 150, 0, 45)
-ContentArea.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+ContentArea.Size = UDim2.new(1, -130, 1, -40)
+ContentArea.Position = UDim2.new(0, 130, 0, 40)
+ContentArea.BackgroundColor3 = Color3.fromRGB(22, 22, 38)
 ContentArea.BorderSizePixel = 0
 ContentArea.Parent = MainPanel
 
 -- สร้าง Tabs
 local Tabs = {}
-local CurrentTab = nil
 
-local function CreateTab(name, icon, order)
+local function CreateTab(name, order)
     local TabButton = Instance.new("TextButton")
-    TabButton.Size = UDim2.new(1, 0, 0, 40)
-    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-    TabButton.Text = icon .. " " .. name
+    TabButton.Size = UDim2.new(1, 0, 0, 35)
+    TabButton.BackgroundColor3 = Color3.fromRGB(28, 28, 48)
+    TabButton.Text = name
     TabButton.TextColor3 = Color3.fromRGB(180, 180, 180)
     TabButton.Font = Enum.Font.GothamBold
-    TabButton.TextSize = 12
+    TabButton.TextSize = 11
     TabButton.BorderSizePixel = 0
     TabButton.LayoutOrder = order
     TabButton.Parent = TabBar
@@ -736,31 +694,30 @@ local function CreateTab(name, icon, order)
     TabCorner.Parent = TabButton
     
     local TabContent = Instance.new("ScrollingFrame")
-    TabContent.Size = UDim2.new(1, -10, 1, -10)
-    TabContent.Position = UDim2.new(0, 5, 0, 5)
+    TabContent.Size = UDim2.new(1, -8, 1, -8)
+    TabContent.Position = UDim2.new(0, 4, 0, 4)
     TabContent.BackgroundTransparency = 1
     TabContent.BorderSizePixel = 0
-    TabContent.ScrollBarThickness = 4
+    TabContent.ScrollBarThickness = 3
     TabContent.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
-    TabContent.CanvasSize = UDim2.new(0, 0, 0, 500)
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 400)
     TabContent.Visible = false
     TabContent.Parent = ContentArea
     
     local ContentList = Instance.new("UIListLayout")
-    ContentList.Padding = UDim.new(0, 4)
+    ContentList.Padding = UDim.new(0, 3)
     ContentList.SortOrder = Enum.SortOrder.LayoutOrder
     ContentList.Parent = TabContent
     
     TabButton.MouseButton1Click:Connect(function()
         for _, tab in pairs(Tabs) do
             tab.Content.Visible = false
-            tab.Button.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+            tab.Button.BackgroundColor3 = Color3.fromRGB(28, 28, 48)
             tab.Button.TextColor3 = Color3.fromRGB(180, 180, 180)
         end
         TabContent.Visible = true
         TabButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
         TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        CurrentTab = TabContent
     end)
     
     table.insert(Tabs, {Button = TabButton, Content = TabContent})
@@ -768,11 +725,11 @@ local function CreateTab(name, icon, order)
     return TabContent
 end
 
--- ฟังก์ชันสร้าง Toggle ใน Tab
+-- ฟังก์ชันสร้าง Toggle
 local function CreateToggle(parent, title, setting, callback, order)
     local ToggleFrame = Instance.new("Frame")
-    ToggleFrame.Size = UDim2.new(1, 0, 0, 38)
-    ToggleFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(32, 32, 52)
     ToggleFrame.BorderSizePixel = 0
     ToggleFrame.LayoutOrder = order
     ToggleFrame.Parent = parent
@@ -782,29 +739,30 @@ local function CreateToggle(parent, title, setting, callback, order)
     ToggleCorner.Parent = ToggleFrame
     
     local ToggleLabel = Instance.new("TextLabel")
-    ToggleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    ToggleLabel.Size = UDim2.new(0.65, 0, 1, 0)
     ToggleLabel.Position = UDim2.new(0, 8, 0, 0)
     ToggleLabel.BackgroundTransparency = 1
     ToggleLabel.Text = title
     ToggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
     ToggleLabel.Font = Enum.Font.Gotham
-    ToggleLabel.TextSize = 11
+    ToggleLabel.TextSize = 10
     ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     ToggleLabel.Parent = ToggleFrame
     
     local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Size = UDim2.new(0, 50, 0, 22)
-    ToggleBtn.Position = UDim2.new(1, -58, 0.5, -11)
+    ToggleBtn.Size = UDim2.new(0, 48, 0, 20)
+    ToggleBtn.Position = UDim2.new(1, -56, 0.5, -10)
     ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
     ToggleBtn.Text = Lang.toggle_off
     ToggleBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ToggleBtn.Font = Enum.Font.GothamBold
-    ToggleBtn.TextSize = 10
+    ToggleBtn.TextSize = 9
     ToggleBtn.BorderSizePixel = 0
     ToggleBtn.Parent = ToggleFrame
     
     local ToggleBtnCorner = Instance.new("UICorner")
-    ToggleBtnCorner.CornerRadius = UDim.new(0, 11)
+    ToggleBtnCorner.CornerRadius = UDim.new(0, 10)
     ToggleBtnCorner.Parent = ToggleBtn
     
     ToggleBtn.MouseButton1Click:Connect(function()
@@ -829,8 +787,8 @@ end
 -- ฟังก์ชันสร้าง Slider
 local function CreateSlider(parent, title, min, max, default, callback, order)
     local SliderFrame = Instance.new("Frame")
-    SliderFrame.Size = UDim2.new(1, 0, 0, 50)
-    SliderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+    SliderFrame.Size = UDim2.new(1, 0, 0, 48)
+    SliderFrame.BackgroundColor3 = Color3.fromRGB(32, 32, 52)
     SliderFrame.BorderSizePixel = 0
     SliderFrame.LayoutOrder = order
     SliderFrame.Parent = parent
@@ -841,18 +799,18 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     
     local SliderLabel = Instance.new("TextLabel")
     SliderLabel.Size = UDim2.new(1, -10, 0, 18)
-    SliderLabel.Position = UDim2.new(0, 5, 0, 3)
+    SliderLabel.Position = UDim2.new(0, 5, 0, 2)
     SliderLabel.BackgroundTransparency = 1
     SliderLabel.Text = title .. ": " .. default
     SliderLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     SliderLabel.Font = Enum.Font.Gotham
-    SliderLabel.TextSize = 11
+    SliderLabel.TextSize = 10
     SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     SliderLabel.Parent = SliderFrame
     
     local SliderBar = Instance.new("Frame")
-    SliderBar.Size = UDim2.new(1, -40, 0, 8)
-    SliderBar.Position = UDim2.new(0, 20, 0, 28)
+    SliderBar.Size = UDim2.new(1, -30, 0, 8)
+    SliderBar.Position = UDim2.new(0, 15, 0, 25)
     SliderBar.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
     SliderBar.BorderSizePixel = 0
     SliderBar.Parent = SliderFrame
@@ -873,8 +831,8 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     SliderFillCorner.Parent = SliderFill
     
     local SliderBtn = Instance.new("TextButton")
-    SliderBtn.Size = UDim2.new(0, 16, 0, 16)
-    SliderBtn.Position = UDim2.new(fillPercent, -8, 0.5, -8)
+    SliderBtn.Size = UDim2.new(0, 14, 0, 14)
+    SliderBtn.Position = UDim2.new(fillPercent, -7, 0.5, -7)
     SliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     SliderBtn.Text = ""
     SliderBtn.BorderSizePixel = 0
@@ -882,7 +840,7 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     SliderBtn.Parent = SliderBar
     
     local SliderBtnCorner = Instance.new("UICorner")
-    SliderBtnCorner.CornerRadius = UDim.new(0, 8)
+    SliderBtnCorner.CornerRadius = UDim.new(0, 7)
     SliderBtnCorner.Parent = SliderBtn
     
     local dragging = false
@@ -895,7 +853,7 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
         local value = math.floor(min + (relativeX / barSize.X) * (max - min))
         
         SliderFill.Size = UDim2.new(relativeX / barSize.X, 0, 1, 0)
-        SliderBtn.Position = UDim2.new(relativeX / barSize.X, -8, 0.5, -8)
+        SliderBtn.Position = UDim2.new(relativeX / barSize.X, -7, 0.5, -7)
         SliderLabel.Text = title .. ": " .. value
         callback(value)
     end
@@ -906,3 +864,248 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     end)
     
     SliderBar.MouseButton1Down:Connect(function()
+        dragging = true
+        UpdateSlider()
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            UpdateSlider()
+        end
+    end)
+    
+    return SliderFrame
+end
+
+-- ฟังก์ชันสร้างปุ่ม
+local function CreateButton(parent, title, callback, order)
+    local ButtonFrame = Instance.new("Frame")
+    ButtonFrame.Size = UDim2.new(1, 0, 0, 32)
+    ButtonFrame.BackgroundColor3 = Color3.fromRGB(32, 32, 52)
+    ButtonFrame.BorderSizePixel = 0
+    ButtonFrame.LayoutOrder = order
+    ButtonFrame.Parent = parent
+    
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 4)
+    ButtonCorner.Parent = ButtonFrame
+    
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -10, 1, -6)
+    Button.Position = UDim2.new(0, 5, 0, 3)
+    Button.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+    Button.Text = title
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 11
+    Button.BorderSizePixel = 0
+    Button.Parent = ButtonFrame
+    
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 3)
+    BtnCorner.Parent = Button
+    
+    Button.MouseButton1Click:Connect(callback)
+    
+    return ButtonFrame
+end
+
+-- ==================== สร้างเนื้อหา Tabs ====================
+local orderCounter = 0
+local function NextOrder()
+    orderCounter = orderCounter + 1
+    return orderCounter
+end
+
+-- Tab อีเว้น
+local eventTab = CreateTab(Lang.cat_event, NextOrder())
+
+CreateToggle(eventTab, Lang.feat_auto_tree, "AutoTree", function(state)
+    if state then
+        spawn(AutoTreeLoop)
+    end
+end, NextOrder())
+
+CreateToggle(eventTab, Lang.feat_steal_monster, "StealMonster", function(state)
+    if state then
+        spawn(StealMonsterLoop)
+    end
+end, NextOrder())
+
+CreateToggle(eventTab, Lang.feat_loot_treadmill, "LootTreadmill", function(state)
+    if state then
+        spawn(LootTreadmillLoop)
+    end
+end, NextOrder())
+
+CreateToggle(eventTab, Lang.feat_steal_fx, "StealFX", function(state)
+    if state then
+        spawn(StealFXLoop)
+    end
+end, NextOrder())
+
+-- Tab ขโมยไข่
+local stealTab = CreateTab(Lang.cat_steal, NextOrder())
+
+CreateToggle(stealTab, Lang.feat_auto_steal, "AutoSteal", function(state)
+    if state then
+        spawn(AutoStealLoop)
+    end
+end, NextOrder())
+
+CreateToggle(stealTab, Lang.feat_anti_drop, "AntiDrop", nil, NextOrder())
+
+CreateToggle(stealTab, Lang.feat_fast_pickup, "FastPickup", nil, NextOrder())
+
+CreateToggle(stealTab, Lang.feat_zigzag, "Zigzag", nil, NextOrder())
+
+-- Tab ESP
+local espTab = CreateTab(Lang.cat_esp, NextOrder())
+
+CreateToggle(espTab, Lang.feat_esp_egg, "ESPEgg", function(state)
+    if state then
+        spawn(ESPEggLoop)
+    else
+        ClearESP()
+    end
+end, NextOrder())
+
+CreateToggle(espTab, Lang.feat_esp_player, "ESPPlayer", function(state)
+    if state then
+        spawn(ESPPlayerLoop)
+    else
+        ClearESP()
+    end
+end, NextOrder())
+
+CreateButton(espTab, Lang.btn_clear_esp, function()
+    ClearESP()
+    print(Lang.esp_cleared)
+end, NextOrder())
+
+-- Tab เคลื่อนไหว
+local moveTab = CreateTab(Lang.cat_move, NextOrder())
+
+CreateSlider(moveTab, Lang.speed_label, 16, 2000, 100, function(value)
+    Settings.SpeedValue = value
+    if Settings.SpeedEnabled then
+        ApplySpeed(value)
+    end
+end, NextOrder())
+
+CreateToggle(moveTab, Lang.feat_speed, "SpeedEnabled", function(state)
+    if state then
+        ApplySpeed(Settings.SpeedValue)
+    else
+        local humanoid = GetHumanoid()
+        if humanoid then
+            humanoid.WalkSpeed = 16
+        end
+    end
+end, NextOrder())
+
+CreateSlider(moveTab, Lang.jump_label, 50, 500, 100, function(value)
+    Settings.JumpPower = value
+    if Settings.HighJump then
+        ApplyJump(value)
+    end
+end, NextOrder())
+
+CreateToggle(moveTab, Lang.feat_high_jump, "HighJump", function(state)
+    if state then
+        ApplyJump(Settings.JumpPower)
+    else
+        local humanoid = GetHumanoid()
+        if humanoid then
+            humanoid.JumpPower = 50
+        end
+    end
+end, NextOrder())
+
+CreateToggle(moveTab, Lang.feat_infinite_jump, "InfiniteJump", function(state)
+    if state then
+        EnableInfiniteJump()
+    end
+end, NextOrder())
+
+-- Tab ต่อสู้
+local combatTab = CreateTab(Lang.cat_combat, NextOrder())
+
+CreateToggle(combatTab, Lang.feat_fast_attack, "FastAttack", function(state)
+    if state then
+        EnableFastAttack()
+    end
+end, NextOrder())
+
+CreateToggle(combatTab, Lang.feat_no_knockback, "NoKnockback", function(state)
+    if state then
+        EnableNoKnockback()
+    end
+end, NextOrder())
+
+-- Tab เซิฟเวอร์
+local serverTab = CreateTab(Lang.cat_server, NextOrder())
+
+CreateButton(serverTab, Lang.btn_server_hop, function()
+    HopServer()
+end, NextOrder())
+
+-- แสดง Tab แรก
+if Tabs[1] then
+    Tabs[1].Content.Visible = true
+    Tabs[1].Button.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+    Tabs[1].Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+
+-- ==================== Event Handlers ====================
+
+-- ปุ่มเปิด/ปิด UI
+ToggleUIButton.MouseButton1Click:Connect(function()
+    MainPanel.Visible = not MainPanel.Visible
+end)
+
+-- ปุ่มปิด Panel
+ClosePanel.MouseButton1Click:Connect(function()
+    MainPanel.Visible = false
+end)
+
+-- ปุ่มเปิด/ปิด Script
+ScriptToggle.MouseButton1Click:Connect(function()
+    Settings.ScriptEnabled = not Settings.ScriptEnabled
+    if Settings.ScriptEnabled then
+        ScriptToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+        ScriptToggle.Text = Lang.script_on
+    else
+        ScriptToggle.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        ScriptToggle.Text = Lang.script_off
+    end
+end)
+
+-- ตรวจสอบตัวละครเกิดใหม่
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if Settings.SpeedEnabled then
+        task.wait(0.5)
+        ApplySpeed(Settings.SpeedValue)
+    end
+    if Settings.HighJump then
+        task.wait(0.5)
+        ApplyJump(Settings.JumpPower)
+    end
+end)
+
+-- ==================== แจ้งเตือน ====================
+print("========================================")
+print("THE CRAFT HUB - โหลดสำเร็จ!")
+print("กดปุ่ม 🎮 เพื่อเปิด/ปิด UI")
+print("========================================")
+
+-- แสดง UI ทันที
+MainPanel.Visible = true
+
+return ScreenGui
