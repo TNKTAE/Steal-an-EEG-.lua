@@ -1,7 +1,7 @@
 --[[
     THE CRAFT HUB - สคริปต์อเนกประสงค์
     UI แบบมินิมอล ลอยได้ เคลื่อนที่ได้
-    รวมทุกฟังก์ชันที่ต้องการ
+    รวมทุกฟังก์ชันที่ต้องการ - ทุกฟังก์ชันทำงานเต็มระบบ
 ]]
 
 -- ==================== Services ====================
@@ -14,6 +14,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local StarterGui = game:GetService("StarterGui")
 
 -- ==================== ระบบภาษา ====================
 local Language = "TH"
@@ -37,7 +38,7 @@ local Translations = {
         feat_steal_fx = "ขโมยไข่ FX",
         feat_auto_steal = "ขโมยไข่อัตโนมัติ",
         feat_anti_drop = "กันไข่หลุด",
-        feat_fast_pickup = "เก็บไข่เร็ว",
+        feat_fast_pickup = "เก็บไข่เร็วที่สุด",
         feat_zigzag = "ซิกแซก",
         feat_esp_egg = "ESP ไข่",
         feat_esp_player = "ESP ผู้เล่น",
@@ -59,6 +60,7 @@ local Translations = {
         no_target = "ไม่พบเป้าหมาย",
         stealing = "กำลังขโมย...",
         returning = "กำลังกลับฐาน...",
+        fast_pickup_note = "เก็บทันที ไม่ต้องกดค้าง",
     },
     EN = {
         title = "THE CRAFT HUB",
@@ -79,7 +81,7 @@ local Translations = {
         feat_steal_fx = "Steal FX",
         feat_auto_steal = "Auto Steal",
         feat_anti_drop = "Anti Drop",
-        feat_fast_pickup = "Fast Pickup",
+        feat_fast_pickup = "Instant Pickup",
         feat_zigzag = "Zigzag",
         feat_esp_egg = "ESP Eggs",
         feat_esp_player = "ESP Players",
@@ -101,6 +103,7 @@ local Translations = {
         no_target = "No target",
         stealing = "Stealing...",
         returning = "Returning...",
+        fast_pickup_note = "Instant pickup - No hold needed",
     }
 }
 local Lang = Translations[Language]
@@ -115,7 +118,7 @@ local Settings = {
     StealFX = false,
     AutoSteal = false,
     AntiDrop = false,
-    FastPickup = false,
+    FastPickup = true, -- เปิดค่าเริ่มต้น เก็บเร็วที่สุด
     Zigzag = false,
     ESPEgg = false,
     ESPPlayer = false,
@@ -173,10 +176,27 @@ local function HasChild(obj, name)
     return false
 end
 
-local function PressE()
+-- 🔑 ปรับปรุง: กดเก็บทันที รวดเร็วที่สุด ไม่ต้องรอ ไม่ต้องกดค้าง
+local function PickupInstant()
+    -- กด E แบบรวดเร็ว 2 ครั้งติดกันทันที เพื่อให้แน่ใจว่าเก็บได้ทันที
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
-    task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+end
+
+-- เก็บไข่แบบเร่งด่วน - เรียกใช้เมื่อต้องการเก็บทันที
+local function FastCollect()
+    if Settings.FastPickup then
+        PickupInstant()
+        -- ป้องกันไข่หลุด กดซ้ำทันที
+        if Settings.AntiDrop then
+            task.wait(0.05)
+            PickupInstant()
+        end
+    else
+        PickupInstant()
+    end
 end
 
 local function MoveTo(pos)
@@ -184,8 +204,6 @@ local function MoveTo(pos)
     local root = GetRoot()
     if humanoid and root and pos then
         humanoid:MoveTo(pos)
-        
-        -- ซิกแซก
         if Settings.Zigzag and IsStealing then
             local offset = Vector3.new(math.sin(tick() * 10) * 3, 0, math.cos(tick() * 10) * 3)
             humanoid:MoveTo(pos + offset)
@@ -193,28 +211,26 @@ local function MoveTo(pos)
     end
 end
 
--- ฟังก์ชันบิน (ใช้ CFrame)
+-- บินเร็วขึ้น
 local function FlyTo(pos, speed)
     local root = GetRoot()
     if not root or not pos then return end
     
     local distance = (pos - root.Position).Magnitude
-    if distance < 3 then return end
+    if distance < 2 then return end
     
     local direction = (pos - root.Position).Unit
-    local moveSpeed = speed or 50
+    local moveSpeed = speed or 120
     
-    -- ใช้ BodyVelocity เพื่อบิน
     local bodyVelocity = Instance.new("BodyVelocity")
     bodyVelocity.Velocity = direction * moveSpeed
-    bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.P = 1000
     bodyVelocity.Parent = root
     
-    -- รอจนกว่าจะถึง
-    local timeout = 0
-    while (root.Position - pos).Magnitude > 5 and timeout < 5 do
-        task.wait(0.1)
-        timeout += 0.1
+    -- รอจนถึงเป้าหมาย เร็วขึ้น
+    while (root.Position - pos).Magnitude > 2 do
+        task.wait()
         bodyVelocity.Velocity = (pos - root.Position).Unit * moveSpeed
     end
     
@@ -226,7 +242,7 @@ end
 -- ตีต้นไม้อัตโนมัติ
 local function AutoTreeLoop()
     while Settings.AutoTree and Settings.ScriptEnabled do
-        task.wait(0.5)
+        task.wait(0.2)
         pcall(function()
             local root = GetRoot()
             if root then
@@ -253,18 +269,17 @@ local function AutoTreeLoop()
                 if nearest then
                     local pos = GetObjPos(nearest)
                     if pos then
-                        if minDist > 5 then
+                        if minDist > 4 then
                             FlyTo(pos, 100)
-                            task.wait(0.3)
                         else
                             local char = GetChar()
                             local tool = char and char:FindFirstChildOfClass("Tool")
                             if tool then
                                 tool:Activate()
-                                task.wait(0.1)
+                                task.wait(0.05)
                                 tool:Deactivate()
                             else
-                                PressE()
+                                FastCollect()
                             end
                         end
                     end
@@ -277,7 +292,7 @@ end
 -- ขโมยไข่ Monster
 local function StealMonsterLoop()
     while Settings.StealMonster and Settings.ScriptEnabled do
-        task.wait(1)
+        task.wait(0.5)
         pcall(function()
             local root = GetRoot()
             if root then
@@ -285,17 +300,8 @@ local function StealMonsterLoop()
                     if obj:IsA("Model") and HasChild(obj, "MonsterParasiteVisual") then
                         local pos = GetObjPos(obj)
                         if pos then
-                            FlyTo(pos, 100)
-                            task.wait(0.3)
-                            PressE()
-                            if Settings.AntiDrop then
-                                task.wait(0.2)
-                                PressE()
-                            end
-                            if Settings.FastPickup then
-                                task.wait(0.1)
-                                PressE()
-                            end
+                            FlyTo(pos, 120)
+                            FastCollect() -- เก็บทันที
                             break
                         end
                     end
@@ -308,7 +314,7 @@ end
 -- เสกลู่วิ่ง
 local function LootTreadmillLoop()
     while Settings.LootTreadmill and Settings.ScriptEnabled do
-        task.wait(0.5)
+        task.wait(0.3)
         pcall(function()
             local treadmill = nil
             for _, obj in pairs(Workspace:GetDescendants()) do
@@ -320,19 +326,18 @@ local function LootTreadmillLoop()
             if treadmill then
                 local pos = GetObjPos(treadmill)
                 if pos then
-                    FlyTo(pos, 80)
-                    task.wait(0.3)
-                    PressE()
+                    FlyTo(pos, 100)
+                    FastCollect()
                 end
             end
         end)
     end
 end
 
--- ขโมยไข่ FX ใน AreaEggSlotsClient
+-- ขโมยไข่ FX
 local function StealFXLoop()
     while Settings.StealFX and Settings.ScriptEnabled do
-        task.wait(1)
+        task.wait(0.5)
         pcall(function()
             local root = GetRoot()
             if root then
@@ -342,17 +347,8 @@ local function StealFXLoop()
                         if egg:IsA("Model") and HasChild(egg, "FX") then
                             local pos = GetObjPos(egg)
                             if pos then
-                                FlyTo(pos, 100)
-                                task.wait(0.3)
-                                PressE()
-                                if Settings.AntiDrop then
-                                    task.wait(0.2)
-                                    PressE()
-                                end
-                                if Settings.FastPickup then
-                                    task.wait(0.1)
-                                    PressE()
-                                end
+                                FlyTo(pos, 120)
+                                FastCollect() -- เก็บทันที
                                 break
                             end
                         end
@@ -363,111 +359,91 @@ local function StealFXLoop()
     end
 end
 
--- ขโมยไข่อัตโนมัติ
+-- 🔑 ขโมยไข่อัตโนมัติ - ปรับปรุงใหม่ เก็บทันที ไม่รอ
 local function AutoStealLoop()
     while Settings.AutoSteal and Settings.ScriptEnabled do
-        task.wait(1)
+        task.wait(0.3)
         if not IsStealing then
             pcall(function()
                 local root = GetRoot()
-                if root then
-                    if not BasePosition then
-                        BasePosition = root.Position
-                    end
-                    
-                    local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
-                    if areaEggs then
-                        local eggs = areaEggs:GetChildren()
-                        local nearest = nil
-                        local minDist = math.huge
-                        
-                        for _, egg in pairs(eggs) do
-                            if egg:IsA("Model") then
-                                local pos = GetObjPos(egg)
-                                if pos then
-                                    -- ตรวจสอบโซน
-                                    local inZone = true
-                                    if Settings.SelectedZone ~= "" then
-                                        inZone = false
-                                        local objectsFolder = Workspace:FindFirstChild("__OBJECTS")
-                                        if objectsFolder then
-                                            local areasFolder = objectsFolder:FindFirstChild("Areas")
-                                            if areasFolder then
-                                                local zone = areasFolder:FindFirstChild(Settings.SelectedZone)
-                                                if zone then
-                                                    local zonePos = GetObjPos(zone)
-                                                    if zonePos and (pos - zonePos).Magnitude < 300 then
-                                                        inZone = true
-                                                    end
-                                                end
+                if not root then return end
+                
+                if not BasePosition then
+                    BasePosition = root.Position
+                end
+                
+                local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
+                if not areaEggs then return end
+                
+                local eggs = areaEggs:GetChildren()
+                local nearest = nil
+                local minDist = math.huge
+                
+                for _, egg in pairs(eggs) do
+                    if egg:IsA("Model") then
+                        local pos = GetObjPos(egg)
+                        if pos then
+                            -- ตรวจสอบโซน
+                            local inZone = true
+                            if Settings.SelectedZone ~= "" then
+                                inZone = false
+                                local objectsFolder = Workspace:FindFirstChild("__OBJECTS")
+                                if objectsFolder then
+                                    local areasFolder = objectsFolder:FindFirstChild("Areas")
+                                    if areasFolder then
+                                        local zone = areasFolder:FindFirstChild(Settings.SelectedZone)
+                                        if zone then
+                                            local zonePos = GetObjPos(zone)
+                                            if zonePos and (pos - zonePos).Magnitude < 300 then
+                                                inZone = true
                                             end
                                         end
                                     end
-                                    
-                                    if inZone then
-                                        local dist = (pos - root.Position).Magnitude
-                                        if dist < minDist then
-                                            minDist = dist
-                                            nearest = egg
-                                        end
-                                    end
                                 end
                             end
-                        end
-                        
-                        if nearest then
-                            IsStealing = true
-                            local eggPos = GetObjPos(nearest)
-                            if eggPos then
-                                -- บินไปที่ไข่
-                                FlyTo(eggPos, Settings.SpeedEnabled and Settings.SpeedValue or 100)
-                                task.wait(0.3)
-                                PressE()
-                                
-                                -- กันไข่หลุด
-                                if Settings.AntiDrop then
-                                    spawn(function()
-                                        local checkTime = 0
-                                        while IsStealing and checkTime < 2 do
-                                            task.wait(0.3)
-                                            PressE()
-                                            checkTime += 0.3
-                                        end
-                                    end)
-                                end
-                                
-                                -- เก็บไข่เร็ว
-                                if Settings.FastPickup then
-                                    task.wait(0.1)
-                                    PressE()
-                                end
-                                
-                                task.wait(0.5)
-                                
-                                -- กลับฐาน (ซิกแซกถ้าเปิด)
-                                if BasePosition then
-                                    if Settings.Zigzag then
-                                        -- ซิกแซกกลับฐาน
-                                        local zigzagPos = BasePosition + Vector3.new(math.sin(tick() * 5) * 10, 0, math.cos(tick() * 5) * 10)
-                                        FlyTo(zigzagPos, Settings.SpeedEnabled and Settings.SpeedValue or 100)
-                                    else
-                                        FlyTo(BasePosition, Settings.SpeedEnabled and Settings.SpeedValue or 100)
-                                    end
+                            
+                            if inZone then
+                                local dist = (pos - root.Position).Magnitude
+                                if dist < minDist then
+                                    minDist = dist
+                                    nearest = egg
                                 end
                             end
-                            IsStealing = false
                         end
                     end
+                end
+                
+                if nearest then
+                    IsStealing = true
+                    local eggPos = GetObjPos(nearest)
+                    if eggPos then
+                        -- บินไปไข่
+                        FlyTo(eggPos, Settings.SpeedEnabled and Settings.SpeedValue or 150)
+                        
+                        -- 🔑 เก็บทันที กดปุ๊บติดมือปั๊บ ไม่ต้องรอ
+                        FastCollect()
+                        
+                        -- กลับฐานทันที
+                        if BasePosition then
+                            if Settings.Zigzag then
+                                local zigzagPos = BasePosition + Vector3.new(math.sin(tick() * 8) * 8, 0, math.cos(tick() * 8) * 8)
+                                FlyTo(zigzagPos, Settings.SpeedEnabled and Settings.SpeedValue or 150)
+                            else
+                                FlyTo(BasePosition, Settings.SpeedEnabled and Settings.SpeedValue or 150)
+                            end
+                        end
+                    end
+                    IsStealing = false
                 end
             end)
         end
     end
 end
 
--- ESP ไข่ (รวมซ้ำ)
+-- ESP ไข่
 local function ESPEggLoop()
     while Settings.ESPEgg and Settings.ScriptEnabled do
-        task.wait(2)
+        task.wait(1)
         ClearESP()
         pcall(function()
             local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
@@ -476,7 +452,6 @@ local function ESPEggLoop()
                 for _, egg in pairs(areaEggs:GetChildren()) do
                     if egg:IsA("Model") then
                         local baseName = egg.Name:gsub("%d+$", "")
-                        -- ถ้าเป็นไข่ซ้ำให้แสดงชื่อเดียว
                         local color = seen[baseName] and Color3.fromRGB(255,100,100) or Color3.fromRGB(255,255,0)
                         seen[baseName] = true
                         CreateESP(egg, color, baseName)
@@ -490,7 +465,7 @@ end
 -- ESP ผู้เล่น
 local function ESPPlayerLoop()
     while Settings.ESPPlayer and Settings.ScriptEnabled do
-        task.wait(2)
+        task.wait(1)
         ClearESP()
         pcall(function()
             for _, player in pairs(Players:GetPlayers()) do
@@ -505,7 +480,7 @@ local function ESPPlayerLoop()
     end
 end
 
--- ปรับความเร็ว (สูงสุด 2000)
+-- ปรับความเร็ว
 local function ApplySpeed(value)
     pcall(function()
         local humanoid = GetHumanoid()
@@ -529,7 +504,7 @@ end
 local function EnableInfiniteJump()
     spawn(function()
         while Settings.InfiniteJump and Settings.ScriptEnabled do
-            task.wait(0.1)
+            task.wait(0.05)
             pcall(function()
                 local humanoid = GetHumanoid()
                 if humanoid then
@@ -551,14 +526,14 @@ end
 local function EnableFastAttack()
     spawn(function()
         while Settings.FastAttack and Settings.ScriptEnabled do
-            task.wait(0.05)
+            task.wait(0.03)
             pcall(function()
                 local char = GetChar()
                 if char then
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
                         tool:Activate()
-                        task.wait(0.02)
+                        task.wait(0.01)
                         tool:Deactivate()
                     end
                 end
@@ -567,18 +542,21 @@ local function EnableFastAttack()
     end)
 end
 
--- ไม่กระเด็น (ไม่มีผลต่อความเร็ว)
+-- ไม่กระเด็น
 local function EnableNoKnockback()
     spawn(function()
         while Settings.NoKnockback and Settings.ScriptEnabled do
-            task.wait(0.3)
+            task.wait(0.1)
             pcall(function()
                 local char = GetChar()
                 if char then
+                    local root = char:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        root.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0)
+                    end
                     for _, part in pairs(char:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        if part:IsA("BasePart") then
                             part.Massless = true
-                            part.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0.3, 0.5)
                         end
                     end
                 end
@@ -591,14 +569,17 @@ end
 local function HopServer()
     pcall(function()
         local servers = {}
-        pcall(function()
-            local response = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        local success, response = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        end)
+        
+        if success and response and response.data then
             for _, server in pairs(response.data) do
-                if server.playing < server.maxPlayers then
+                if server.playing < server.maxPlayers and server.id then
                     table.insert(servers, server.id)
                 end
             end
-        end)
+        end
         
         if #servers > 0 then
             local randomServer = servers[math.random(1, #servers)]
@@ -618,18 +599,13 @@ local function RefreshZones()
             local areasFolder = objectsFolder:FindFirstChild("Areas")
             if areasFolder then
                 for _, area in pairs(areasFolder:GetChildren()) do
-                    table.insert(ZoneList, area.Name)
+                    if area:IsA("BasePart") or area:IsA("Model") then
+                        table.insert(ZoneList, area.Name)
+                    end
                 end
             end
         end
     end)
-    
-    if #ZoneList > 0 then
-        print(Lang.zones_found .. table.concat(ZoneList, ", "))
-    else
-        print(Lang.no_zone)
-    end
-    
     return ZoneList
 end
 
@@ -641,17 +617,19 @@ function CreateESP(target, color, name)
         local highlight = Instance.new("Highlight")
         highlight.Name = "ESP_" .. name
         highlight.FillColor = color
-        highlight.FillTransparency = 0.5
+        highlight.FillTransparency = 0.4
         highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.OutlineTransparency = 0.3
+        highlight.OutlineTransparency = 0.2
+        highlight.Adornee = target
         highlight.Parent = target
         table.insert(ESPObjects, highlight)
         
         local billboard = Instance.new("BillboardGui")
         billboard.Name = "ESP_BB_" .. name
-        billboard.Size = UDim2.new(0, 80, 0, 20)
-        billboard.StudsOffset = Vector3.new(0, 2, 0)
+        billboard.Size = UDim2.new(0, 100, 0, 25)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
         billboard.AlwaysOnTop = true
+        billboard.Adornee = target:IsA("Model") and target.PrimaryPart or target
         billboard.Parent = target
         
         local label = Instance.new("TextLabel")
@@ -660,7 +638,7 @@ function CreateESP(target, color, name)
         label.Text = name
         label.TextColor3 = Color3.fromRGB(255, 255, 255)
         label.Font = Enum.Font.GothamBold
-        label.TextSize = 10
+        label.TextSize = 11
         label.Parent = billboard
     end)
 end
@@ -668,11 +646,7 @@ end
 -- ล้าง ESP
 function ClearESP()
     for _, obj in pairs(ESPObjects) do
-        pcall(function()
-            if obj and obj.Parent then
-                obj:Destroy()
-            end
-        end)
+        pcall(function() if obj then obj:Destroy() end end)
     end
     ESPObjects = {}
 end
@@ -686,23 +660,23 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 -- ปุ่มเปิด/ปิด UI
 local ToggleUIButton = Instance.new("TextButton")
-ToggleUIButton.Size = UDim2.new(0, 40, 0, 40)
-ToggleUIButton.Position = UDim2.new(0, 5, 0.5, -20)
-ToggleUIButton.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+ToggleUIButton.Size = UDim2.new(0, 45, 0, 45)
+ToggleUIButton.Position = UDim2.new(0, 8, 0.5, -22)
+ToggleUIButton.BackgroundColor3 = Color3.fromRGB(0, 120, 220)
 ToggleUIButton.Text = "🎮"
-ToggleUIButton.TextSize = 20
+ToggleUIButton.TextSize = 22
 ToggleUIButton.BorderSizePixel = 0
 ToggleUIButton.Parent = ScreenGui
 
 local ToggleUICorner = Instance.new("UICorner")
-ToggleUICorner.CornerRadius = UDim.new(0, 8)
+ToggleUICorner.CornerRadius = UDim.new(0, 10)
 ToggleUICorner.Parent = ToggleUIButton
 
 -- Main Panel
 local MainPanel = Instance.new("Frame")
-MainPanel.Size = UDim2.new(0, 420, 0, 250)
-MainPanel.Position = UDim2.new(0.5, -210, 0.5, -125)
-MainPanel.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+MainPanel.Size = UDim2.new(0, 440, 0, 280)
+MainPanel.Position = UDim2.new(0.5, -220, 0.5, -140)
+MainPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 25)
 MainPanel.BorderSizePixel = 0
 MainPanel.Visible = true
 MainPanel.Active = true
@@ -710,99 +684,99 @@ MainPanel.Draggable = true
 MainPanel.Parent = ScreenGui
 
 local PanelCorner = Instance.new("UICorner")
-PanelCorner.CornerRadius = UDim.new(0, 8)
+PanelCorner.CornerRadius = UDim.new(0, 10)
 PanelCorner.Parent = MainPanel
 
 local PanelStroke = Instance.new("UIStroke")
-PanelStroke.Color = Color3.fromRGB(0, 150, 255)
-PanelStroke.Thickness = 1
+PanelStroke.Color = Color3.fromRGB(0, 180, 255)
+PanelStroke.Thickness = 1.5
 PanelStroke.Parent = MainPanel
 
 -- Title Bar
 local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
-TitleBar.BackgroundColor3 = Color3.fromRGB(0, 70, 140)
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainPanel
 
 local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.CornerRadius = UDim.new(0, 10)
 TitleCorner.Parent = TitleBar
 
 local TitleBottom = Instance.new("Frame")
-TitleBottom.Size = UDim2.new(1, 0, 0, 8)
-TitleBottom.Position = UDim2.new(0, 0, 0, 27)
-TitleBottom.BackgroundColor3 = Color3.fromRGB(0, 70, 140)
+TitleBottom.Size = UDim2.new(1, 0, 0, 10)
+TitleBottom.Position = UDim2.new(0, 0, 0, 30)
+TitleBottom.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
 TitleBottom.BorderSizePixel = 0
 TitleBottom.Parent = TitleBar
 
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = Lang.title
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 TitleLabel.Font = Enum.Font.GothamBlack
-TitleLabel.TextSize = 13
+TitleLabel.TextSize = 14
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
 
 -- ปุ่ม Script On/Off
 local ScriptToggle = Instance.new("TextButton")
-ScriptToggle.Size = UDim2.new(0, 70, 0, 24)
-ScriptToggle.Position = UDim2.new(1, -170, 0, 5)
+ScriptToggle.Size = UDim2.new(0, 80, 0, 26)
+ScriptToggle.Position = UDim2.new(1, -185, 0, 7)
 ScriptToggle.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
 ScriptToggle.Text = Lang.script_on
 ScriptToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
 ScriptToggle.Font = Enum.Font.GothamBold
-ScriptToggle.TextSize = 9
+ScriptToggle.TextSize = 10
 ScriptToggle.BorderSizePixel = 0
 ScriptToggle.Parent = TitleBar
 
 local ScriptToggleCorner = Instance.new("UICorner")
-ScriptToggleCorner.CornerRadius = UDim.new(0, 12)
+ScriptToggleCorner.CornerRadius = UDim.new(0, 13)
 ScriptToggleCorner.Parent = ScriptToggle
 
 -- ปุ่มปิด Panel
 local ClosePanel = Instance.new("TextButton")
-ClosePanel.Size = UDim2.new(0, 24, 0, 24)
-ClosePanel.Position = UDim2.new(1, -30, 0, 5)
-ClosePanel.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+ClosePanel.Size = UDim2.new(0, 28, 0, 28)
+ClosePanel.Position = UDim2.new(1, -35, 0, 6)
+ClosePanel.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 ClosePanel.Text = "✕"
 ClosePanel.TextColor3 = Color3.fromRGB(255, 255, 255)
 ClosePanel.Font = Enum.Font.GothamBold
-ClosePanel.TextSize = 11
+ClosePanel.TextSize = 12
 ClosePanel.BorderSizePixel = 0
 ClosePanel.Parent = TitleBar
 
 local ClosePanelCorner = Instance.new("UICorner")
-ClosePanelCorner.CornerRadius = UDim.new(0, 12)
+ClosePanelCorner.CornerRadius = UDim.new(0, 14)
 ClosePanelCorner.Parent = ClosePanel
 
 -- Tab Bar
 local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(0, 90, 1, -35)
-TabBar.Position = UDim2.new(0, 0, 0, 35)
-TabBar.BackgroundColor3 = Color3.fromRGB(15, 15, 28)
+TabBar.Size = UDim2.new(0, 100, 1, -40)
+TabBar.Position = UDim2.new(0, 0, 0, 40)
+TabBar.BackgroundColor3 = Color3.fromRGB(18, 18, 32)
 TabBar.BorderSizePixel = 0
 TabBar.Parent = MainPanel
 
 local TabList = Instance.new("UIListLayout")
-TabList.Padding = UDim.new(0, 2)
+TabList.Padding = UDim.new(0, 3)
 TabList.SortOrder = Enum.SortOrder.LayoutOrder
 TabList.Parent = TabBar
 
 local TabPadding = Instance.new("UIPadding")
-TabPadding.PaddingTop = UDim.new(0, 3)
-TabPadding.PaddingLeft = UDim.new(0, 3)
-TabPadding.PaddingRight = UDim.new(0, 3)
+TabPadding.PaddingTop = UDim.new(0, 4)
+TabPadding.PaddingLeft = UDim.new(0, 4)
+TabPadding.PaddingRight = UDim.new(0, 4)
 TabPadding.Parent = TabBar
 
 -- Content Area
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -90, 1, -35)
-ContentArea.Position = UDim2.new(0, 90, 0, 35)
-ContentArea.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+ContentArea.Size = UDim2.new(1, -100, 1, -40)
+ContentArea.Position = UDim2.new(0, 100, 0, 40)
+ContentArea.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
 ContentArea.BorderSizePixel = 0
 ContentArea.Parent = MainPanel
 
@@ -811,44 +785,44 @@ local Tabs = {}
 
 local function CreateTab(name, order)
     local TabButton = Instance.new("TextButton")
-    TabButton.Size = UDim2.new(1, 0, 0, 28)
-    TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 42)
+    TabButton.Size = UDim2.new(1, 0, 0, 32)
+    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
     TabButton.Text = name
-    TabButton.TextColor3 = Color3.fromRGB(170, 170, 170)
+    TabButton.TextColor3 = Color3.fromRGB(160, 160, 160)
     TabButton.Font = Enum.Font.GothamBold
-    TabButton.TextSize = 8
+    TabButton.TextSize = 9
     TabButton.BorderSizePixel = 0
     TabButton.LayoutOrder = order
     TabButton.Parent = TabBar
     
     local TabCorner = Instance.new("UICorner")
-    TabCorner.CornerRadius = UDim.new(0, 3)
+    TabCorner.CornerRadius = UDim.new(0, 5)
     TabCorner.Parent = TabButton
     
     local TabContent = Instance.new("ScrollingFrame")
-    TabContent.Size = UDim2.new(1, -4, 1, -4)
-    TabContent.Position = UDim2.new(0, 2, 0, 2)
+    TabContent.Size = UDim2.new(1, -8, 1, -8)
+    TabContent.Position = UDim2.new(0, 4, 0, 4)
     TabContent.BackgroundTransparency = 1
     TabContent.BorderSizePixel = 0
-    TabContent.ScrollBarThickness = 2
-    TabContent.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
-    TabContent.CanvasSize = UDim2.new(0, 0, 0, 400)
+    TabContent.ScrollBarThickness = 4
+    TabContent.ScrollBarImageColor3 = Color3.fromRGB(0, 180, 255)
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 500)
     TabContent.Visible = false
     TabContent.Parent = ContentArea
     
     local ContentList = Instance.new("UIListLayout")
-    ContentList.Padding = UDim.new(0, 2)
+    ContentList.Padding = UDim.new(0, 4)
     ContentList.SortOrder = Enum.SortOrder.LayoutOrder
     ContentList.Parent = TabContent
     
     TabButton.MouseButton1Click:Connect(function()
         for _, tab in pairs(Tabs) do
             tab.Content.Visible = false
-            tab.Button.BackgroundColor3 = Color3.fromRGB(25, 25, 42)
-            tab.Button.TextColor3 = Color3.fromRGB(170, 170, 170)
+            tab.Button.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+            tab.Button.TextColor3 = Color3.fromRGB(160, 160, 160)
         end
         TabContent.Visible = true
-        TabButton.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+        TabButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
         TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     end)
     
@@ -859,52 +833,58 @@ end
 -- ฟังก์ชันสร้าง Toggle
 local function CreateToggle(parent, title, setting, callback, order)
     local ToggleFrame = Instance.new("Frame")
-    ToggleFrame.Size = UDim2.new(1, 0, 0, 28)
-    ToggleFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 46)
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 32)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
     ToggleFrame.BorderSizePixel = 0
     ToggleFrame.LayoutOrder = order
     ToggleFrame.Parent = parent
     
     local ToggleCorner = Instance.new("UICorner")
-    ToggleCorner.CornerRadius = UDim.new(0, 3)
+    ToggleCorner.CornerRadius = UDim.new(0, 5)
     ToggleCorner.Parent = ToggleFrame
     
     local ToggleLabel = Instance.new("TextLabel")
-    ToggleLabel.Size = UDim2.new(0.55, 0, 1, 0)
-    ToggleLabel.Position = UDim2.new(0, 5, 0, 0)
+    ToggleLabel.Size = UDim2.new(0.6, 0, 1, 0)
+    ToggleLabel.Position = UDim2.new(0, 8, 0, 0)
     ToggleLabel.BackgroundTransparency = 1
     ToggleLabel.Text = title
-    ToggleLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+    ToggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
     ToggleLabel.Font = Enum.Font.Gotham
-    ToggleLabel.TextSize = 8
+    ToggleLabel.TextSize = 9
     ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    ToggleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     ToggleLabel.Parent = ToggleFrame
     
     local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Size = UDim2.new(0, 38, 0, 18)
-    ToggleBtn.Position = UDim2.new(1, -43, 0.5, -9)
-    ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+    ToggleBtn.Size = UDim2.new(0, 44, 0, 22)
+    ToggleBtn.Position = UDim2.new(1, -52, 0.5, -11)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
     ToggleBtn.Text = Lang.toggle_off
-    ToggleBtn.TextColor3 = Color3.fromRGB(140, 140, 140)
+    ToggleBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ToggleBtn.Font = Enum.Font.GothamBold
-    ToggleBtn.TextSize = 7
+    ToggleBtn.TextSize = 8
     ToggleBtn.BorderSizePixel = 0
     ToggleBtn.Parent = ToggleFrame
     
     local ToggleBtnCorner = Instance.new("UICorner")
-    ToggleBtnCorner.CornerRadius = UDim.new(0, 9)
+    ToggleBtnCorner.CornerRadius = UDim.new(0, 11)
     ToggleBtnCorner.Parent = ToggleBtn
+    
+    -- ตั้งค่าสถานะเริ่มต้น
+    if Settings[setting] then
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 230)
+        ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleBtn.Text = Lang.toggle_on
+    end
     
     ToggleBtn.MouseButton1Click:Connect(function()
         Settings[setting] = not Settings[setting]
         if Settings[setting] then
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 230)
             ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
             ToggleBtn.Text = Lang.toggle_on
         else
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
-            ToggleBtn.TextColor3 = Color3.fromRGB(140, 140, 140)
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
+            ToggleBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
             ToggleBtn.Text = Lang.toggle_off
         end
         if callback then callback(Settings[setting]) end
@@ -916,52 +896,52 @@ end
 -- ฟังก์ชันสร้าง Slider
 local function CreateSlider(parent, title, min, max, default, callback, order)
     local SliderFrame = Instance.new("Frame")
-    SliderFrame.Size = UDim2.new(1, 0, 0, 40)
-    SliderFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 46)
+    SliderFrame.Size = UDim2.new(1, 0, 0, 45)
+    SliderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
     SliderFrame.BorderSizePixel = 0
     SliderFrame.LayoutOrder = order
     SliderFrame.Parent = parent
     
     local SliderCorner = Instance.new("UICorner")
-    SliderCorner.CornerRadius = UDim.new(0, 3)
+    SliderCorner.CornerRadius = UDim.new(0, 5)
     SliderCorner.Parent = SliderFrame
     
     local SliderLabel = Instance.new("TextLabel")
-    SliderLabel.Size = UDim2.new(1, -8, 0, 15)
-    SliderLabel.Position = UDim2.new(0, 4, 0, 2)
+    SliderLabel.Size = UDim2.new(1, -10, 0, 18)
+    SliderLabel.Position = UDim2.new(0, 5, 0, 3)
     SliderLabel.BackgroundTransparency = 1
     SliderLabel.Text = title .. ": " .. default
-    SliderLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
+    SliderLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     SliderLabel.Font = Enum.Font.Gotham
-    SliderLabel.TextSize = 8
+    SliderLabel.TextSize = 9
     SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     SliderLabel.Parent = SliderFrame
     
     local SliderBar = Instance.new("Frame")
-    SliderBar.Size = UDim2.new(1, -24, 0, 6)
-    SliderBar.Position = UDim2.new(0, 12, 0, 22)
-    SliderBar.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+    SliderBar.Size = UDim2.new(1, -30, 0, 8)
+    SliderBar.Position = UDim2.new(0, 15, 0, 28)
+    SliderBar.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
     SliderBar.BorderSizePixel = 0
     SliderBar.Parent = SliderFrame
     
     local SliderBarCorner = Instance.new("UICorner")
-    SliderBarCorner.CornerRadius = UDim.new(0, 3)
+    SliderBarCorner.CornerRadius = UDim.new(0, 4)
     SliderBarCorner.Parent = SliderBar
     
     local SliderFill = Instance.new("Frame")
     local fillPercent = (default - min) / (max - min)
     SliderFill.Size = UDim2.new(fillPercent, 0, 1, 0)
-    SliderFill.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(0, 150, 230)
     SliderFill.BorderSizePixel = 0
     SliderFill.Parent = SliderBar
     
     local SliderFillCorner = Instance.new("UICorner")
-    SliderFillCorner.CornerRadius = UDim.new(0, 3)
+    SliderFillCorner.CornerRadius = UDim.new(0, 4)
     SliderFillCorner.Parent = SliderFill
     
     local SliderBtn = Instance.new("TextButton")
-    SliderBtn.Size = UDim2.new(0, 12, 0, 12)
-    SliderBtn.Position = UDim2.new(fillPercent, -6, 0.5, -6)
+    SliderBtn.Size = UDim2.new(0, 16, 0, 16)
+    SliderBtn.Position = UDim2.new(fillPercent, -8, 0.5, -8)
     SliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     SliderBtn.Text = ""
     SliderBtn.BorderSizePixel = 0
@@ -969,7 +949,7 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     SliderBtn.Parent = SliderBar
     
     local SliderBtnCorner = Instance.new("UICorner")
-    SliderBtnCorner.CornerRadius = UDim.new(0, 6)
+    SliderBtnCorner.CornerRadius = UDim.new(0, 8)
     SliderBtnCorner.Parent = SliderBtn
     
     local dragging = false
@@ -982,31 +962,18 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
         local value = math.floor(min + (relativeX / barSize.X) * (max - min))
         
         SliderFill.Size = UDim2.new(relativeX / barSize.X, 0, 1, 0)
-        SliderBtn.Position = UDim2.new(relativeX / barSize.X, -6, 0.5, -6)
+        SliderBtn.Position = UDim2.new(relativeX / barSize.X, -8, 0.5, -8)
         SliderLabel.Text = title .. ": " .. value
         callback(value)
     end
     
-    SliderBtn.MouseButton1Down:Connect(function()
-        dragging = true
-        UpdateSlider()
-    end)
-    
-    SliderBar.MouseButton1Down:Connect(function()
-        dragging = true
-        UpdateSlider()
-    end)
-    
+    SliderBtn.MouseButton1Down:Connect(function() dragging = true end)
+    SliderBar.MouseButton1Down:Connect(function() dragging = true UpdateSlider() end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
     end)
-    
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            UpdateSlider()
-        end
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then UpdateSlider() end
     end)
     
     return SliderFrame
@@ -1015,231 +982,151 @@ end
 -- ฟังก์ชันสร้างปุ่ม
 local function CreateButton(parent, title, callback, order)
     local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(1, -6, 0, 24)
-    Button.Position = UDim2.new(0, 3, 0, 0)
-    Button.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+    Button.Size = UDim2.new(1, -8, 0, 28)
+    Button.Position = UDim2.new(0, 4, 0, 0)
+    Button.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
     Button.Text = title
     Button.TextColor3 = Color3.fromRGB(255, 255, 255)
     Button.Font = Enum.Font.GothamBold
-    Button.TextSize = 8
+    Button.TextSize = 9
     Button.BorderSizePixel = 0
     Button.LayoutOrder = order
     Button.Parent = parent
     
     local BtnCorner = Instance.new("UICorner")
-    BtnCorner.CornerRadius = UDim.new(0, 3)
+    BtnCorner.CornerRadius = UDim.new(0, 5)
     BtnCorner.Parent = Button
     
     Button.MouseButton1Click:Connect(callback)
-    
     return Button
 end
 
--- ==================== สร้างเนื้อหา ====================
+-- ==================== สร้างเนื้อหา - ทุกฟังก์ชันครบถ้วน ====================
 local orderCounter = 0
 local function NextOrder()
-    orderCounter = orderCounter + 1
+    orderCounter += 1
     return orderCounter
 end
 
--- Tab อีเว้น
+-- ========== Tab อีเว้น ==========
 local eventTab = CreateTab(Lang.cat_event, NextOrder())
+CreateToggle(eventTab, Lang.feat_auto_tree, "AutoTree", function(s) if s then spawn(AutoTreeLoop) end end, NextOrder())
+CreateToggle(eventTab, Lang.feat_steal_monster, "StealMonster", function(s) if s then spawn(StealMonsterLoop) end end, NextOrder())
+CreateToggle(eventTab, Lang.feat_loot_treadmill, "LootTreadmill", function(s) if s then spawn(LootTreadmillLoop) end end, NextOrder())
+CreateToggle(eventTab, Lang.feat_steal_fx, "StealFX", function(s) if s then spawn(StealFXLoop) end end, NextOrder())
 
-CreateToggle(eventTab, Lang.feat_auto_tree, "AutoTree", function(state)
-    if state then spawn(AutoTreeLoop) end
-end, NextOrder())
-
-CreateToggle(eventTab, Lang.feat_steal_monster, "StealMonster", function(state)
-    if state then spawn(StealMonsterLoop) end
-end, NextOrder())
-
-CreateToggle(eventTab, Lang.feat_loot_treadmill, "LootTreadmill", function(state)
-    if state then spawn(LootTreadmillLoop) end
-end, NextOrder())
-
-CreateToggle(eventTab, Lang.feat_steal_fx, "StealFX", function(state)
-    if state then spawn(StealFXLoop) end
-end, NextOrder())
-
--- Tab ขโมยไข่
+-- ========== Tab ขโมยไข่ ==========
 local stealTab = CreateTab(Lang.cat_steal, NextOrder())
-
-CreateToggle(stealTab, Lang.feat_auto_steal, "AutoSteal", function(state)
-    if state then spawn(AutoStealLoop) end
-end, NextOrder())
-
+CreateToggle(stealTab, Lang.feat_auto_steal, "AutoSteal", function(s) if s then spawn(AutoStealLoop) end end, NextOrder())
 CreateToggle(stealTab, Lang.feat_anti_drop, "AntiDrop", nil, NextOrder())
-
-CreateToggle(stealTab, Lang.feat_fast_pickup, "FastPickup", nil, NextOrder())
-
+CreateToggle(stealTab, Lang.feat_fast_pickup .. " ⚡", "FastPickup", nil, NextOrder())
 CreateToggle(stealTab, Lang.feat_zigzag, "Zigzag", nil, NextOrder())
 
--- Tab ESP
+-- ========== Tab ESP ==========
 local espTab = CreateTab(Lang.cat_esp, NextOrder())
+CreateToggle(espTab, Lang.feat_esp_egg, "ESPEgg", function(s) if s then spawn(ESPEggLoop) else ClearESP() end end, NextOrder())
+CreateToggle(espTab, Lang.feat_esp_player, "ESPPlayer", function(s) if s then spawn(ESPPlayerLoop) else ClearESP() end end, NextOrder())
+CreateButton(espTab, Lang.btn_clear_esp, function() ClearESP() end, NextOrder())
 
-CreateToggle(espTab, Lang.feat_esp_egg, "ESPEgg", function(state)
-    if state then spawn(ESPEggLoop) else ClearESP() end
-end, NextOrder())
-
-CreateToggle(espTab, Lang.feat_esp_player, "ESPPlayer", function(state)
-    if state then spawn(ESPPlayerLoop) else ClearESP() end
-end, NextOrder())
-
-CreateButton(espTab, Lang.btn_clear_esp, function()
-    ClearESP()
-    print(Lang.esp_cleared)
-end, NextOrder())
-
--- Tab เคลื่อนไหว
+-- ========== Tab เคลื่อนไหว ==========
 local moveTab = CreateTab(Lang.cat_move, NextOrder())
-
-CreateSlider(moveTab, Lang.speed_label, 16, 2000, 100, function(value)
-    Settings.SpeedValue = value
-    if Settings.SpeedEnabled then ApplySpeed(value) end
+CreateSlider(moveTab, Lang.speed_label, 16, 2000, 100, function(v)
+    Settings.SpeedValue = v
+    if Settings.SpeedEnabled then ApplySpeed(v) end
 end, NextOrder())
-
-CreateToggle(moveTab, Lang.feat_speed, "SpeedEnabled", function(state)
-    if state then
-        ApplySpeed(Settings.SpeedValue)
-    else
-        local humanoid = GetHumanoid()
-        if humanoid then humanoid.WalkSpeed = 16 end
-    end
+CreateToggle(moveTab, Lang.feat_speed, "SpeedEnabled", function(s)
+    if s then ApplySpeed(Settings.SpeedValue)
+    else local h = GetHumanoid() if h then h.WalkSpeed = 16 end end
 end, NextOrder())
-
-CreateSlider(moveTab, Lang.jump_label, 50, 500, 100, function(value)
-    Settings.JumpPower = value
-    if Settings.HighJump then ApplyJump(value) end
+CreateSlider(moveTab, Lang.jump_label, 50, 500, 100, function(v)
+    Settings.JumpPower = v
+    if Settings.HighJump then ApplyJump(v) end
 end, NextOrder())
-
-CreateToggle(moveTab, Lang.feat_high_jump, "HighJump", function(state)
-    if state then
-        ApplyJump(Settings.JumpPower)
-    else
-        local humanoid = GetHumanoid()
-        if humanoid then humanoid.JumpPower = 50 end
-    end
+CreateToggle(moveTab, Lang.feat_high_jump, "HighJump", function(s)
+    if s then ApplyJump(Settings.JumpPower)
+    else local h = GetHumanoid() if h then h.JumpPower = 50 end end
 end, NextOrder())
+CreateToggle(moveTab, Lang.feat_infinite_jump, "InfiniteJump", function(s) if s then EnableInfiniteJump() end end, NextOrder())
 
-CreateToggle(moveTab, Lang.feat_infinite_jump, "InfiniteJump", function(state)
-    if state then EnableInfiniteJump() end
-end, NextOrder())
-
--- Tab ต่อสู้
+-- ========== Tab ต่อสู้ ==========
 local combatTab = CreateTab(Lang.cat_combat, NextOrder())
+CreateToggle(combatTab, Lang.feat_fast_attack, "FastAttack", function(s) if s then EnableFastAttack() end end, NextOrder())
+CreateToggle(combatTab, Lang.feat_no_knockback, "NoKnockback", function(s) if s then EnableNoKnockback() end end, NextOrder())
 
-CreateToggle(combatTab, Lang.feat_fast_attack, "FastAttack", function(state)
-    if state then EnableFastAttack() end
-end, NextOrder())
-
-CreateToggle(combatTab, Lang.feat_no_knockback, "NoKnockback", function(state)
-    if state then EnableNoKnockback() end
-end, NextOrder())
-
--- Tab เซิฟเวอร์
+-- ========== Tab เซิฟเวอร์ ==========
 local serverTab = CreateTab(Lang.cat_server, NextOrder())
+CreateButton(serverTab, Lang.btn_server_hop, HopServer, NextOrder())
 
-CreateButton(serverTab, Lang.btn_server_hop, function()
-    HopServer()
-end, NextOrder())
-
--- Tab โซน
+-- ========== Tab โซน ==========
 local zoneTab = CreateTab(Lang.cat_zone, NextOrder())
-
--- แสดงโซนที่เลือก
 local zoneLabel = Instance.new("TextLabel")
-zoneLabel.Size = UDim2.new(1, -6, 0, 20)
-zoneLabel.Position = UDim2.new(0, 3, 0, 0)
-zoneLabel.BackgroundColor3 = Color3.fromRGB(28, 28, 46)
-zoneLabel.Text = Lang.zone_label .. (Settings.SelectedZone ~= "" and Settings.SelectedZone or "-")
-zoneLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+zoneLabel.Size = UDim2.new(1, -8, 0, 28)
+zoneLabel.Position = UDim2.new(0, 4, 0, 0)
+zoneLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+zoneLabel.Text = Lang.zone_label .. "-"
+zoneLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 zoneLabel.Font = Enum.Font.GothamBold
-zoneLabel.TextSize = 9
+zoneLabel.TextSize = 10
 zoneLabel.LayoutOrder = NextOrder()
+zoneTab.CanvasSize = UDim2.new(0, 0, 0, 100)
 zoneLabel.Parent = zoneTab
 
--- ปุ่มรีเฟรชโซน
+local zoneLabelCorner = Instance.new("UICorner")
+zoneLabelCorner.CornerRadius = UDim.new(0, 5)
+zoneLabelCorner.Parent = zoneLabel
+
 CreateButton(zoneTab, Lang.btn_refresh_zone, function()
     local zones = RefreshZones()
     zoneLabel.Text = Lang.zone_label .. (#zones > 0 and table.concat(zones, ", ") or "-")
-    
-    -- ล้างปุ่มโซนเก่า
-    for _, btn in pairs(ZoneButtons) do
-        if btn and btn.Parent then
-            btn:Destroy()
-        end
-    end
+    for _, btn in pairs(ZoneButtons) do if btn then btn:Destroy() end end
     ZoneButtons = {}
-    
-    -- สร้างปุ่มโซนใหม่
-    for _, zoneName in pairs(zones) do
-        local zoneBtn = CreateButton(zoneTab, zoneName, function()
+    for i, zoneName in pairs(zones) do
+        local btn = CreateButton(zoneTab, zoneName, function()
             Settings.SelectedZone = zoneName
             zoneLabel.Text = Lang.zone_label .. zoneName
         end, NextOrder())
-        table.insert(ZoneButtons, zoneBtn)
+        table.insert(ZoneButtons, btn)
     end
-    
-    zoneTab.CanvasSize = UDim2.new(0, 0, 0, 50 + #zones * 30)
+    zoneTab.CanvasSize = UDim2.new(0, 0, 0, 50 + #zones * 32)
 end, NextOrder())
 
 -- แสดง Tab แรก
 if Tabs[1] then
     Tabs[1].Content.Visible = true
-    Tabs[1].Button.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+    Tabs[1].Button.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
     Tabs[1].Button.TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 
 -- ==================== Event Handlers ====================
+ToggleUIButton.MouseButton1Click:Connect(function() MainPanel.Visible = not MainPanel.Visible end)
+ClosePanel.MouseButton1Click:Connect(function() MainPanel.Visible = false end)
 
--- ปุ่มเปิด/ปิด UI
-ToggleUIButton.MouseButton1Click:Connect(function()
-    MainPanel.Visible = not MainPanel.Visible
-end)
-
--- ปุ่มปิด Panel
-ClosePanel.MouseButton1Click:Connect(function()
-    MainPanel.Visible = false
-end)
-
--- ปุ่มเปิด/ปิด Script
 ScriptToggle.MouseButton1Click:Connect(function()
     Settings.ScriptEnabled = not Settings.ScriptEnabled
     if Settings.ScriptEnabled then
         ScriptToggle.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
         ScriptToggle.Text = Lang.script_on
     else
-        ScriptToggle.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        ScriptToggle.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         ScriptToggle.Text = Lang.script_off
     end
 end)
 
--- ตรวจสอบตัวละครเกิดใหม่
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1)
-    if Settings.SpeedEnabled then
-        ApplySpeed(Settings.SpeedValue)
-    end
-    if Settings.HighJump then
-        ApplyJump(Settings.JumpPower)
-    end
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if Settings.SpeedEnabled then ApplySpeed(Settings.SpeedValue) end
+    if Settings.HighJump then ApplyJump(Settings.JumpPower) end
 end)
 
 -- โหลดโซนอัตโนมัติ
 task.spawn(function()
-    task.wait(2)
-    local zones = RefreshZones()
-    if #zones > 0 then
-        print(Lang.zones_found .. table.concat(zones, ", "))
-    end
+    task.wait(1.5)
+    RefreshZones()
 end)
 
 -- ==================== แจ้งเตือน ====================
 print("========================================")
-print("THE CRAFT HUB - โหลดสำเร็จ!")
-print("รวมทุกฟังก์ชันที่ต้องการ")
-print("กดปุ่ม 🎮 เพื่อเปิด/ปิด UI")
-print("ลาก UI ได้ที่ Title Bar")
-print("========================================")
-
-return ScreenGui
+print("✅ THE CRAFT HUB - โหลดสำเร็จ!")
+print("⚡ เก็บไข่ทันที - กดปุ๊บติดมือปั๊บ ไม่ต้องรอ")
+print("📋 ทุกฟังก์ชันแสดงครบถ้วนใน UI")
+print("🎮 กดปุ่
