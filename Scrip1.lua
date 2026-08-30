@@ -1,7 +1,7 @@
 --[[
     THE CRAFT HUB - สคริปต์อเนกประสงค์
     UI แบบมินิมอล ลอยได้ เคลื่อนที่ได้
-    ปรับให้ปลอดภัย ไม่โดนเตะ
+    รวมทุกฟังก์ชันที่ต้องการ
 ]]
 
 -- ==================== Services ====================
@@ -30,6 +30,7 @@ local Translations = {
         cat_move = "🏃 เคลื่อนไหว",
         cat_combat = "⚔️ ต่อสู้",
         cat_server = "🌐 เซิฟเวอร์",
+        cat_zone = "📍 โซน",
         feat_auto_tree = "ตีต้นไม้ Auto",
         feat_steal_monster = "ขโมยไข่ Monster",
         feat_loot_treadmill = "เสกลู่วิ่ง",
@@ -49,8 +50,15 @@ local Translations = {
         jump_label = "พลังกระโดด",
         btn_server_hop = "ย้ายเซิฟ",
         btn_clear_esp = "ล้าง ESP",
+        btn_refresh_zone = "รีเฟรชโซน",
+        zone_label = "โซนที่เลือก: ",
+        no_zone = "ไม่พบโซน",
+        zones_found = "พบโซน: ",
         esp_cleared = "ล้าง ESP แล้ว",
         hopping = "กำลังย้ายเซิฟ...",
+        no_target = "ไม่พบเป้าหมาย",
+        stealing = "กำลังขโมย...",
+        returning = "กำลังกลับฐาน...",
     },
     EN = {
         title = "THE CRAFT HUB",
@@ -64,6 +72,7 @@ local Translations = {
         cat_move = "🏃 Move",
         cat_combat = "⚔️ Combat",
         cat_server = "🌐 Server",
+        cat_zone = "📍 Zone",
         feat_auto_tree = "Auto Tree",
         feat_steal_monster = "Steal Monster",
         feat_loot_treadmill = "Loot Treadmill",
@@ -83,8 +92,15 @@ local Translations = {
         jump_label = "Jump Power",
         btn_server_hop = "Server Hop",
         btn_clear_esp = "Clear ESP",
+        btn_refresh_zone = "Refresh Zones",
+        zone_label = "Selected Zone: ",
+        no_zone = "No zones found",
+        zones_found = "Zones: ",
         esp_cleared = "ESP Cleared",
         hopping = "Hopping...",
+        no_target = "No target",
+        stealing = "Stealing...",
+        returning = "Returning...",
     }
 }
 local Lang = Translations[Language]
@@ -110,12 +126,14 @@ local Settings = {
     InfiniteJump = false,
     FastAttack = false,
     NoKnockback = false,
+    SelectedZone = "",
 }
 
 local ESPObjects = {}
 local IsStealing = false
 local BasePosition = nil
-local Loops = {}
+local ZoneList = {}
+local ZoneButtons = {}
 
 -- ==================== ฟังก์ชันช่วยเหลือ ====================
 local function GetChar()
@@ -163,17 +181,52 @@ end
 
 local function MoveTo(pos)
     local humanoid = GetHumanoid()
-    if humanoid and pos then
+    local root = GetRoot()
+    if humanoid and root and pos then
         humanoid:MoveTo(pos)
+        
+        -- ซิกแซก
+        if Settings.Zigzag and IsStealing then
+            local offset = Vector3.new(math.sin(tick() * 10) * 3, 0, math.cos(tick() * 10) * 3)
+            humanoid:MoveTo(pos + offset)
+        end
     end
 end
 
--- ==================== ฟังก์ชันหลัก (ปลอดภัย ไม่โดนเตะ) ====================
+-- ฟังก์ชันบิน (ใช้ CFrame)
+local function FlyTo(pos, speed)
+    local root = GetRoot()
+    if not root or not pos then return end
+    
+    local distance = (pos - root.Position).Magnitude
+    if distance < 3 then return end
+    
+    local direction = (pos - root.Position).Unit
+    local moveSpeed = speed or 50
+    
+    -- ใช้ BodyVelocity เพื่อบิน
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Velocity = direction * moveSpeed
+    bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+    bodyVelocity.Parent = root
+    
+    -- รอจนกว่าจะถึง
+    local timeout = 0
+    while (root.Position - pos).Magnitude > 5 and timeout < 5 do
+        task.wait(0.1)
+        timeout += 0.1
+        bodyVelocity.Velocity = (pos - root.Position).Unit * moveSpeed
+    end
+    
+    bodyVelocity:Destroy()
+end
 
--- ตีต้นไม้
+-- ==================== ฟังก์ชันหลัก ====================
+
+-- ตีต้นไม้อัตโนมัติ
 local function AutoTreeLoop()
     while Settings.AutoTree and Settings.ScriptEnabled do
-        task.wait(1)
+        task.wait(0.5)
         pcall(function()
             local root = GetRoot()
             if root then
@@ -185,7 +238,7 @@ local function AutoTreeLoop()
                 end
                 
                 local nearest = nil
-                local minDist = 100
+                local minDist = math.huge
                 for _, tree in pairs(trees) do
                     local pos = GetObjPos(tree)
                     if pos then
@@ -200,16 +253,19 @@ local function AutoTreeLoop()
                 if nearest then
                     local pos = GetObjPos(nearest)
                     if pos then
-                        MoveTo(pos)
-                        task.wait(0.5)
-                        local char = GetChar()
-                        local tool = char and char:FindFirstChildOfClass("Tool")
-                        if tool then
-                            tool:Activate()
-                            task.wait(0.1)
-                            tool:Deactivate()
+                        if minDist > 5 then
+                            FlyTo(pos, 100)
+                            task.wait(0.3)
                         else
-                            PressE()
+                            local char = GetChar()
+                            local tool = char and char:FindFirstChildOfClass("Tool")
+                            if tool then
+                                tool:Activate()
+                                task.wait(0.1)
+                                tool:Deactivate()
+                            else
+                                PressE()
+                            end
                         end
                     end
                 end
@@ -221,19 +277,23 @@ end
 -- ขโมยไข่ Monster
 local function StealMonsterLoop()
     while Settings.StealMonster and Settings.ScriptEnabled do
-        task.wait(2)
+        task.wait(1)
         pcall(function()
             local root = GetRoot()
             if root then
                 for _, obj in pairs(Workspace:GetDescendants()) do
                     if obj:IsA("Model") and HasChild(obj, "MonsterParasiteVisual") then
                         local pos = GetObjPos(obj)
-                        if pos and (pos - root.Position).Magnitude < 200 then
-                            MoveTo(pos)
-                            task.wait(0.5)
+                        if pos then
+                            FlyTo(pos, 100)
+                            task.wait(0.3)
                             PressE()
                             if Settings.AntiDrop then
                                 task.wait(0.2)
+                                PressE()
+                            end
+                            if Settings.FastPickup then
+                                task.wait(0.1)
                                 PressE()
                             end
                             break
@@ -248,7 +308,7 @@ end
 -- เสกลู่วิ่ง
 local function LootTreadmillLoop()
     while Settings.LootTreadmill and Settings.ScriptEnabled do
-        task.wait(1)
+        task.wait(0.5)
         pcall(function()
             local treadmill = nil
             for _, obj in pairs(Workspace:GetDescendants()) do
@@ -260,7 +320,7 @@ local function LootTreadmillLoop()
             if treadmill then
                 local pos = GetObjPos(treadmill)
                 if pos then
-                    MoveTo(pos)
+                    FlyTo(pos, 80)
                     task.wait(0.3)
                     PressE()
                 end
@@ -269,25 +329,32 @@ local function LootTreadmillLoop()
     end
 end
 
--- ขโมยไข่ FX
+-- ขโมยไข่ FX ใน AreaEggSlotsClient
 local function StealFXLoop()
     while Settings.StealFX and Settings.ScriptEnabled do
-        task.wait(2)
+        task.wait(1)
         pcall(function()
             local root = GetRoot()
             if root then
-                for _, obj in pairs(Workspace:GetDescendants()) do
-                    if obj:IsA("Model") and HasChild(obj, "FX") then
-                        local pos = GetObjPos(obj)
-                        if pos and (pos - root.Position).Magnitude < 200 then
-                            MoveTo(pos)
-                            task.wait(0.5)
-                            PressE()
-                            if Settings.AntiDrop then
-                                task.wait(0.2)
+                local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
+                if areaEggs then
+                    for _, egg in pairs(areaEggs:GetChildren()) do
+                        if egg:IsA("Model") and HasChild(egg, "FX") then
+                            local pos = GetObjPos(egg)
+                            if pos then
+                                FlyTo(pos, 100)
+                                task.wait(0.3)
                                 PressE()
+                                if Settings.AntiDrop then
+                                    task.wait(0.2)
+                                    PressE()
+                                end
+                                if Settings.FastPickup then
+                                    task.wait(0.1)
+                                    PressE()
+                                end
+                                break
                             end
-                            break
                         end
                     end
                 end
@@ -299,7 +366,7 @@ end
 -- ขโมยไข่อัตโนมัติ
 local function AutoStealLoop()
     while Settings.AutoSteal and Settings.ScriptEnabled do
-        task.wait(2)
+        task.wait(1)
         if not IsStealing then
             pcall(function()
                 local root = GetRoot()
@@ -312,16 +379,37 @@ local function AutoStealLoop()
                     if areaEggs then
                         local eggs = areaEggs:GetChildren()
                         local nearest = nil
-                        local minDist = 150
+                        local minDist = math.huge
                         
                         for _, egg in pairs(eggs) do
                             if egg:IsA("Model") then
                                 local pos = GetObjPos(egg)
                                 if pos then
-                                    local dist = (pos - root.Position).Magnitude
-                                    if dist < minDist then
-                                        minDist = dist
-                                        nearest = egg
+                                    -- ตรวจสอบโซน
+                                    local inZone = true
+                                    if Settings.SelectedZone ~= "" then
+                                        inZone = false
+                                        local objectsFolder = Workspace:FindFirstChild("__OBJECTS")
+                                        if objectsFolder then
+                                            local areasFolder = objectsFolder:FindFirstChild("Areas")
+                                            if areasFolder then
+                                                local zone = areasFolder:FindFirstChild(Settings.SelectedZone)
+                                                if zone then
+                                                    local zonePos = GetObjPos(zone)
+                                                    if zonePos and (pos - zonePos).Magnitude < 300 then
+                                                        inZone = true
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                    
+                                    if inZone then
+                                        local dist = (pos - root.Position).Magnitude
+                                        if dist < minDist then
+                                            minDist = dist
+                                            nearest = egg
+                                        end
                                     end
                                 end
                             end
@@ -331,20 +419,40 @@ local function AutoStealLoop()
                             IsStealing = true
                             local eggPos = GetObjPos(nearest)
                             if eggPos then
-                                MoveTo(eggPos)
-                                task.wait(0.5)
+                                -- บินไปที่ไข่
+                                FlyTo(eggPos, Settings.SpeedEnabled and Settings.SpeedValue or 100)
+                                task.wait(0.3)
                                 PressE()
+                                
+                                -- กันไข่หลุด
                                 if Settings.AntiDrop then
-                                    task.wait(0.2)
-                                    PressE()
+                                    spawn(function()
+                                        local checkTime = 0
+                                        while IsStealing and checkTime < 2 do
+                                            task.wait(0.3)
+                                            PressE()
+                                            checkTime += 0.3
+                                        end
+                                    end)
                                 end
+                                
+                                -- เก็บไข่เร็ว
                                 if Settings.FastPickup then
                                     task.wait(0.1)
                                     PressE()
                                 end
+                                
                                 task.wait(0.5)
+                                
+                                -- กลับฐาน (ซิกแซกถ้าเปิด)
                                 if BasePosition then
-                                    MoveTo(BasePosition)
+                                    if Settings.Zigzag then
+                                        -- ซิกแซกกลับฐาน
+                                        local zigzagPos = BasePosition + Vector3.new(math.sin(tick() * 5) * 10, 0, math.cos(tick() * 5) * 10)
+                                        FlyTo(zigzagPos, Settings.SpeedEnabled and Settings.SpeedValue or 100)
+                                    else
+                                        FlyTo(BasePosition, Settings.SpeedEnabled and Settings.SpeedValue or 100)
+                                    end
                                 end
                             end
                             IsStealing = false
@@ -356,10 +464,10 @@ local function AutoStealLoop()
     end
 end
 
--- ESP ไข่
+-- ESP ไข่ (รวมซ้ำ)
 local function ESPEggLoop()
     while Settings.ESPEgg and Settings.ScriptEnabled do
-        task.wait(3)
+        task.wait(2)
         ClearESP()
         pcall(function()
             local areaEggs = Workspace:FindFirstChild("AreaEggSlotsClient")
@@ -368,6 +476,7 @@ local function ESPEggLoop()
                 for _, egg in pairs(areaEggs:GetChildren()) do
                     if egg:IsA("Model") then
                         local baseName = egg.Name:gsub("%d+$", "")
+                        -- ถ้าเป็นไข่ซ้ำให้แสดงชื่อเดียว
                         local color = seen[baseName] and Color3.fromRGB(255,100,100) or Color3.fromRGB(255,255,0)
                         seen[baseName] = true
                         CreateESP(egg, color, baseName)
@@ -381,7 +490,7 @@ end
 -- ESP ผู้เล่น
 local function ESPPlayerLoop()
     while Settings.ESPPlayer and Settings.ScriptEnabled do
-        task.wait(3)
+        task.wait(2)
         ClearESP()
         pcall(function()
             for _, player in pairs(Players:GetPlayers()) do
@@ -396,12 +505,12 @@ local function ESPPlayerLoop()
     end
 end
 
--- ปรับความเร็ว
+-- ปรับความเร็ว (สูงสุด 2000)
 local function ApplySpeed(value)
     pcall(function()
         local humanoid = GetHumanoid()
         if humanoid then
-            humanoid.WalkSpeed = math.clamp(value, 16, 500)
+            humanoid.WalkSpeed = value
         end
     end)
 end
@@ -411,7 +520,7 @@ local function ApplyJump(value)
     pcall(function()
         local humanoid = GetHumanoid()
         if humanoid then
-            humanoid.JumpPower = math.clamp(value, 50, 300)
+            humanoid.JumpPower = value
         end
     end)
 end
@@ -420,12 +529,12 @@ end
 local function EnableInfiniteJump()
     spawn(function()
         while Settings.InfiniteJump and Settings.ScriptEnabled do
-            task.wait(0.2)
+            task.wait(0.1)
             pcall(function()
                 local humanoid = GetHumanoid()
                 if humanoid then
                     humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
-                    humanoid.JumpPower = math.clamp(Settings.JumpPower, 50, 300)
+                    humanoid.JumpPower = Settings.JumpPower
                 end
             end)
         end
@@ -442,14 +551,14 @@ end
 local function EnableFastAttack()
     spawn(function()
         while Settings.FastAttack and Settings.ScriptEnabled do
-            task.wait(0.1)
+            task.wait(0.05)
             pcall(function()
                 local char = GetChar()
                 if char then
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
                         tool:Activate()
-                        task.wait(0.03)
+                        task.wait(0.02)
                         tool:Deactivate()
                     end
                 end
@@ -458,17 +567,18 @@ local function EnableFastAttack()
     end)
 end
 
--- ไม่กระเด็น
+-- ไม่กระเด็น (ไม่มีผลต่อความเร็ว)
 local function EnableNoKnockback()
     spawn(function()
         while Settings.NoKnockback and Settings.ScriptEnabled do
-            task.wait(0.5)
+            task.wait(0.3)
             pcall(function()
                 local char = GetChar()
                 if char then
                     for _, part in pairs(char:GetDescendants()) do
                         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                             part.Massless = true
+                            part.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0.3, 0.5)
                         end
                     end
                 end
@@ -481,7 +591,7 @@ end
 local function HopServer()
     pcall(function()
         local servers = {}
-        local success = pcall(function()
+        pcall(function()
             local response = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
             for _, server in pairs(response.data) do
                 if server.playing < server.maxPlayers then
@@ -497,6 +607,30 @@ local function HopServer()
             TeleportService:Teleport(game.PlaceId, LocalPlayer)
         end
     end)
+end
+
+-- รีเฟรชโซน
+local function RefreshZones()
+    ZoneList = {}
+    pcall(function()
+        local objectsFolder = Workspace:FindFirstChild("__OBJECTS")
+        if objectsFolder then
+            local areasFolder = objectsFolder:FindFirstChild("Areas")
+            if areasFolder then
+                for _, area in pairs(areasFolder:GetChildren()) do
+                    table.insert(ZoneList, area.Name)
+                end
+            end
+        end
+    end)
+    
+    if #ZoneList > 0 then
+        print(Lang.zones_found .. table.concat(ZoneList, ", "))
+    else
+        print(Lang.no_zone)
+    end
+    
+    return ZoneList
 end
 
 -- สร้าง ESP
@@ -543,14 +677,14 @@ function ClearESP()
     ESPObjects = {}
 end
 
--- ==================== สร้าง UI แบบมินิมอล ====================
+-- ==================== สร้าง UI ====================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "THE_CRAFT_HUB_UI"
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- ปุ่มเปิด/ปิด UI (ลอยด้านข้าง)
+-- ปุ่มเปิด/ปิด UI
 local ToggleUIButton = Instance.new("TextButton")
 ToggleUIButton.Size = UDim2.new(0, 40, 0, 40)
 ToggleUIButton.Position = UDim2.new(0, 5, 0.5, -20)
@@ -564,20 +698,15 @@ local ToggleUICorner = Instance.new("UICorner")
 ToggleUICorner.CornerRadius = UDim.new(0, 8)
 ToggleUICorner.Parent = ToggleUIButton
 
-local ToggleUIStroke = Instance.new("UIStroke")
-ToggleUIStroke.Color = Color3.fromRGB(0, 200, 255)
-ToggleUIStroke.Thickness = 1
-ToggleUIStroke.Parent = ToggleUIButton
-
--- Main Panel (เล็ก กะทัดรัด)
+-- Main Panel
 local MainPanel = Instance.new("Frame")
-MainPanel.Size = UDim2.new(0, 400, 0, 220)
-MainPanel.Position = UDim2.new(0.5, -200, 0.5, -110)
+MainPanel.Size = UDim2.new(0, 420, 0, 250)
+MainPanel.Position = UDim2.new(0.5, -210, 0.5, -125)
 MainPanel.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 MainPanel.BorderSizePixel = 0
 MainPanel.Visible = true
 MainPanel.Active = true
-MainPanel.Draggable = true -- ลากได้
+MainPanel.Draggable = true
 MainPanel.Parent = ScreenGui
 
 local PanelCorner = Instance.new("UICorner")
@@ -621,7 +750,7 @@ TitleLabel.Parent = TitleBar
 -- ปุ่ม Script On/Off
 local ScriptToggle = Instance.new("TextButton")
 ScriptToggle.Size = UDim2.new(0, 70, 0, 24)
-ScriptToggle.Position = UDim2.new(1, -160, 0, 5)
+ScriptToggle.Position = UDim2.new(1, -170, 0, 5)
 ScriptToggle.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
 ScriptToggle.Text = Lang.script_on
 ScriptToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -650,7 +779,7 @@ local ClosePanelCorner = Instance.new("UICorner")
 ClosePanelCorner.CornerRadius = UDim.new(0, 12)
 ClosePanelCorner.Parent = ClosePanel
 
--- Tab Bar (ด้านซ้าย เล็ก)
+-- Tab Bar
 local TabBar = Instance.new("Frame")
 TabBar.Size = UDim2.new(0, 90, 1, -35)
 TabBar.Position = UDim2.new(0, 0, 0, 35)
@@ -687,7 +816,7 @@ local function CreateTab(name, order)
     TabButton.Text = name
     TabButton.TextColor3 = Color3.fromRGB(170, 170, 170)
     TabButton.Font = Enum.Font.GothamBold
-    TabButton.TextSize = 9
+    TabButton.TextSize = 8
     TabButton.BorderSizePixel = 0
     TabButton.LayoutOrder = order
     TabButton.Parent = TabBar
@@ -703,7 +832,7 @@ local function CreateTab(name, order)
     TabContent.BorderSizePixel = 0
     TabContent.ScrollBarThickness = 2
     TabContent.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
-    TabContent.CanvasSize = UDim2.new(0, 0, 0, 300)
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 400)
     TabContent.Visible = false
     TabContent.Parent = ContentArea
     
@@ -727,7 +856,7 @@ local function CreateTab(name, order)
     return TabContent
 end
 
--- ฟังก์ชันสร้าง Toggle (เล็ก)
+-- ฟังก์ชันสร้าง Toggle
 local function CreateToggle(parent, title, setting, callback, order)
     local ToggleFrame = Instance.new("Frame")
     ToggleFrame.Size = UDim2.new(1, 0, 0, 28)
@@ -741,25 +870,25 @@ local function CreateToggle(parent, title, setting, callback, order)
     ToggleCorner.Parent = ToggleFrame
     
     local ToggleLabel = Instance.new("TextLabel")
-    ToggleLabel.Size = UDim2.new(0.6, 0, 1, 0)
+    ToggleLabel.Size = UDim2.new(0.55, 0, 1, 0)
     ToggleLabel.Position = UDim2.new(0, 5, 0, 0)
     ToggleLabel.BackgroundTransparency = 1
     ToggleLabel.Text = title
     ToggleLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
     ToggleLabel.Font = Enum.Font.Gotham
-    ToggleLabel.TextSize = 9
+    ToggleLabel.TextSize = 8
     ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
     ToggleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     ToggleLabel.Parent = ToggleFrame
     
     local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Size = UDim2.new(0, 40, 0, 18)
-    ToggleBtn.Position = UDim2.new(1, -45, 0.5, -9)
+    ToggleBtn.Size = UDim2.new(0, 38, 0, 18)
+    ToggleBtn.Position = UDim2.new(1, -43, 0.5, -9)
     ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
     ToggleBtn.Text = Lang.toggle_off
     ToggleBtn.TextColor3 = Color3.fromRGB(140, 140, 140)
     ToggleBtn.Font = Enum.Font.GothamBold
-    ToggleBtn.TextSize = 8
+    ToggleBtn.TextSize = 7
     ToggleBtn.BorderSizePixel = 0
     ToggleBtn.Parent = ToggleFrame
     
@@ -784,7 +913,7 @@ local function CreateToggle(parent, title, setting, callback, order)
     return ToggleFrame
 end
 
--- ฟังก์ชันสร้าง Slider (เล็ก)
+-- ฟังก์ชันสร้าง Slider
 local function CreateSlider(parent, title, min, max, default, callback, order)
     local SliderFrame = Instance.new("Frame")
     SliderFrame.Size = UDim2.new(1, 0, 0, 40)
@@ -804,7 +933,7 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     SliderLabel.Text = title .. ": " .. default
     SliderLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
     SliderLabel.Font = Enum.Font.Gotham
-    SliderLabel.TextSize = 9
+    SliderLabel.TextSize = 8
     SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     SliderLabel.Parent = SliderFrame
     
@@ -883,16 +1012,16 @@ local function CreateSlider(parent, title, min, max, default, callback, order)
     return SliderFrame
 end
 
--- ฟังก์ชันสร้างปุ่ม (เล็ก)
+-- ฟังก์ชันสร้างปุ่ม
 local function CreateButton(parent, title, callback, order)
     local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(1, -6, 0, 25)
+    Button.Size = UDim2.new(1, -6, 0, 24)
     Button.Position = UDim2.new(0, 3, 0, 0)
     Button.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
     Button.Text = title
     Button.TextColor3 = Color3.fromRGB(255, 255, 255)
     Button.Font = Enum.Font.GothamBold
-    Button.TextSize = 9
+    Button.TextSize = 8
     Button.BorderSizePixel = 0
     Button.LayoutOrder = order
     Button.Parent = parent
@@ -964,7 +1093,7 @@ end, NextOrder())
 -- Tab เคลื่อนไหว
 local moveTab = CreateTab(Lang.cat_move, NextOrder())
 
-CreateSlider(moveTab, Lang.speed_label, 16, 500, 100, function(value)
+CreateSlider(moveTab, Lang.speed_label, 16, 2000, 100, function(value)
     Settings.SpeedValue = value
     if Settings.SpeedEnabled then ApplySpeed(value) end
 end, NextOrder())
@@ -978,7 +1107,7 @@ CreateToggle(moveTab, Lang.feat_speed, "SpeedEnabled", function(state)
     end
 end, NextOrder())
 
-CreateSlider(moveTab, Lang.jump_label, 50, 300, 100, function(value)
+CreateSlider(moveTab, Lang.jump_label, 50, 500, 100, function(value)
     Settings.JumpPower = value
     if Settings.HighJump then ApplyJump(value) end
 end, NextOrder())
@@ -1012,6 +1141,46 @@ local serverTab = CreateTab(Lang.cat_server, NextOrder())
 
 CreateButton(serverTab, Lang.btn_server_hop, function()
     HopServer()
+end, NextOrder())
+
+-- Tab โซน
+local zoneTab = CreateTab(Lang.cat_zone, NextOrder())
+
+-- แสดงโซนที่เลือก
+local zoneLabel = Instance.new("TextLabel")
+zoneLabel.Size = UDim2.new(1, -6, 0, 20)
+zoneLabel.Position = UDim2.new(0, 3, 0, 0)
+zoneLabel.BackgroundColor3 = Color3.fromRGB(28, 28, 46)
+zoneLabel.Text = Lang.zone_label .. (Settings.SelectedZone ~= "" and Settings.SelectedZone or "-")
+zoneLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+zoneLabel.Font = Enum.Font.GothamBold
+zoneLabel.TextSize = 9
+zoneLabel.LayoutOrder = NextOrder()
+zoneLabel.Parent = zoneTab
+
+-- ปุ่มรีเฟรชโซน
+CreateButton(zoneTab, Lang.btn_refresh_zone, function()
+    local zones = RefreshZones()
+    zoneLabel.Text = Lang.zone_label .. (#zones > 0 and table.concat(zones, ", ") or "-")
+    
+    -- ล้างปุ่มโซนเก่า
+    for _, btn in pairs(ZoneButtons) do
+        if btn and btn.Parent then
+            btn:Destroy()
+        end
+    end
+    ZoneButtons = {}
+    
+    -- สร้างปุ่มโซนใหม่
+    for _, zoneName in pairs(zones) do
+        local zoneBtn = CreateButton(zoneTab, zoneName, function()
+            Settings.SelectedZone = zoneName
+            zoneLabel.Text = Lang.zone_label .. zoneName
+        end, NextOrder())
+        table.insert(ZoneButtons, zoneBtn)
+    end
+    
+    zoneTab.CanvasSize = UDim2.new(0, 0, 0, 50 + #zones * 30)
 end, NextOrder())
 
 -- แสดง Tab แรก
@@ -1056,10 +1225,19 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
+-- โหลดโซนอัตโนมัติ
+task.spawn(function()
+    task.wait(2)
+    local zones = RefreshZones()
+    if #zones > 0 then
+        print(Lang.zones_found .. table.concat(zones, ", "))
+    end
+end)
+
 -- ==================== แจ้งเตือน ====================
 print("========================================")
 print("THE CRAFT HUB - โหลดสำเร็จ!")
-print("UI ขนาดเล็ก ปลอดภัย ไม่โดนเตะ")
+print("รวมทุกฟังก์ชันที่ต้องการ")
 print("กดปุ่ม 🎮 เพื่อเปิด/ปิด UI")
 print("ลาก UI ได้ที่ Title Bar")
 print("========================================")
